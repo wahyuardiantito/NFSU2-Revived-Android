@@ -464,6 +464,13 @@ public final class GameActivity extends NativeActivity {
         int[] size = GameOptions.renderSize(this, dispW, dispH);
         String resPercent = launch.getStringExtra("resolutionPercent");
         if (resPercent == null) resPercent = GameOptions.get(this, GameOptions.RESOLUTION);
+        if ("640x480".equalsIgnoreCase(resPercent)) {
+            int pct = (640 * 100 + (dispW / 2)) / dispW;
+            resPercent = String.valueOf(pct);
+        } else if ("800x600".equalsIgnoreCase(resPercent)) {
+            int pct = (800 * 100 + (dispW / 2)) / dispW;
+            resPercent = String.valueOf(pct);
+        }
         try {
             android.system.Os.setenv("NFSU2_DISPLAY_WIDTH", String.valueOf(dispW), true);
             android.system.Os.setenv("NFSU2_DISPLAY_HEIGHT", String.valueOf(dispH), true);
@@ -488,7 +495,8 @@ public final class GameActivity extends NativeActivity {
         nativeLanguage(language);
         nativeFrameLimit(launch.getIntExtra("frameCap", Integer.parseInt(GameOptions.get(this, GameOptions.FPS))));
         int screenMode = launch.getIntExtra("widescreenMode", GameOptions.widescreenMode(this));
-        nativeWidescreen(true);             // 3D world is ALWAYS widescreen fullscreen, never squished
+        boolean widescreen = launch.getBooleanExtra("widescreen", GameOptions.usesWidescreenPatch(this));
+        nativeWidescreen(widescreen);
         nativeScreenMode(screenMode);       // 0=Widescreen HUD edges, 2=4:3 HUD centre
         nativeDrawDistance(distVal);
         nativeForwardCulling(true);

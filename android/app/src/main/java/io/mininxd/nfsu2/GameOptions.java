@@ -34,13 +34,13 @@ public final class GameOptions {
             new Option(GRAPHICS_BACKEND, "Graphics API", "auto",
                     new String[] {"auto", "vulkan", "opengl"},
                     new String[] {"Auto", "Vulkan (DXVK)", "OpenGL (ES)"}),
-            new Option(RESOLUTION, "Internal Resolution", "65",
-                    new String[] {"25", "30", "35", "40", "45", "50", "55", "60", "65", "70", "75", "80", "85", "90", "95", "100", "125", "150", "200"},
-                    new String[] {"25%", "30%", "35%", "40%", "45%", "50%", "55%", "60%", "65%", "70%", "75%", "80%", "85%", "90%", "95%", "100%", "125%", "150%", "200%"}),
+            new Option(RESOLUTION, "Internal Resolution", "640x480",
+                    new String[] {"640x480", "800x600", "25", "30", "35", "40", "45", "50", "55", "60", "65", "70", "75", "80", "85", "90", "95", "100", "125", "150", "200"},
+                    new String[] {"640x480 (Original 4:3)", "800x600 (Classic 4:3)", "25%", "30%", "35%", "40%", "45%", "50%", "55%", "60%", "65%", "70%", "75%", "80%", "85%", "90%", "95%", "100%", "125%", "150%", "200%"}),
             new Option(DRAW_DISTANCE, "Draw Distance", "performance",
                     new String[] {"ultra_performance", "performance", "balanced", "extended", "original"},
                     new String[] {"Ultra Performance", "Performance", "Balanced", "Extended", "Original"}),
-            new Option(FPS, "FPS Limit", "45",
+            new Option(FPS, "FPS Limit", "60",
                     new String[] {"30", "45", "60", "90", "120", "0"},
                     new String[] {"30 FPS", "45 FPS", "60 FPS", "90 FPS", "120 FPS", "Uncapped"}),
             new Option(DISPLAY_LOGS, "Display Logs", "off",
@@ -344,8 +344,18 @@ public final class GameOptions {
     /** Render size for the selected resolution on a display of width × height (landscape). */
     static int[] renderSize(Context context, int width, int height) {
         String value = get(context, RESOLUTION);
-        float scale = Integer.parseInt(value) / 100f;
-        return new int[] {Math.round(width * scale / 2f) * 2, Math.round(height * scale / 2f) * 2};
+        if ("640x480".equalsIgnoreCase(value) || "original".equalsIgnoreCase(value)) {
+            return new int[] {640, 480};
+        }
+        if ("800x600".equalsIgnoreCase(value)) {
+            return new int[] {800, 600};
+        }
+        try {
+            float scale = Integer.parseInt(value) / 100f;
+            return new int[] {Math.round(width * scale / 2f) * 2, Math.round(height * scale / 2f) * 2};
+        } catch (Exception e) {
+            return new int[] {640, 480};
+        }
     }
 
     /**
