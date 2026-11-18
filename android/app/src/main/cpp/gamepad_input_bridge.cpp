@@ -166,10 +166,10 @@ void nfs_gamepad_bridge_on_motion(const AInputEvent* event) {
         );
     } else {
         // Fallback axis disambiguation
-        if (std::fabs(raw_rx) > 0.06f || std::fabs(raw_ry) > 0.06f) {
+        if (std::hypot(raw_rx, raw_ry) > 0.05f) {
             chosen_rx = raw_rx;
             chosen_ry = raw_ry;
-        } else if (raw_z > -0.85f && raw_rz > -0.85f) {
+        } else if (!(raw_z < -0.85f && raw_rz < -0.85f)) {
             chosen_rx = raw_z;
             chosen_ry = raw_rz;
         }

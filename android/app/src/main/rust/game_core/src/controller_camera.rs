@@ -85,23 +85,21 @@ impl GamepadCameraEngine {
         let mut chosen_x = 0.0f32;
         let mut chosen_y = 0.0f32;
 
-        let has_rx_ry_activity = raw_rx.abs() > 0.06 || raw_ry.abs() > 0.06;
+        let has_rx_ry_activity = raw_rx.abs() > 0.05 || raw_ry.abs() > 0.05;
 
         if has_rx_ry_activity {
             // Dedicated RX / RY axes active
             chosen_x = raw_rx;
             chosen_y = raw_ry;
         } else {
-            // Check if Z / RZ represent resting triggers (often -1.0f when unpressed on older pads)
-            let is_z_resting_trigger = raw_z < -0.85;
-            let is_rz_resting_trigger = raw_rz < -0.85;
+            // Z and RZ are resting triggers ONLY if BOTH rest near -1.0f simultaneously
+            let are_resting_triggers = raw_z < -0.85 && raw_rz < -0.85;
 
-            if !is_z_resting_trigger && !is_rz_resting_trigger {
-                // Z and RZ rest near 0.0f; on GameSir and standard Android controllers, these are the right stick!
+            if !are_resting_triggers {
+                // Z and RZ are the right stick! Full negative/positive deflections are preserved.
                 chosen_x = raw_z;
                 chosen_y = raw_rz;
             } else {
-                // Z or RZ is a resting trigger; check if RX/RY are valid even if below 0.06
                 chosen_x = raw_rx;
                 chosen_y = raw_ry;
             }

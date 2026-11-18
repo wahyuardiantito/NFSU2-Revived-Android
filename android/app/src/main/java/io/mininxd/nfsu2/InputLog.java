@@ -185,6 +185,17 @@ public final class InputLog {
                 eventType, dev.getId(), dev.getName(), dev.isExternal(), vendorId, productId,
                 android.text.TextUtils.join("|", srcNames), desc);
         log("InputDevice", msg);
+        try {
+            List<InputDevice.MotionRange> ranges = dev.getMotionRanges();
+            if (ranges != null) {
+                for (InputDevice.MotionRange range : ranges) {
+                    log("InputDevice", String.format(Locale.US,
+                        "  Axis %d (%s): min=%.2f max=%.2f flat=%.2f fuzz=%.2f",
+                        range.getAxis(), MotionEvent.axisToString(range.getAxis()),
+                        range.getMin(), range.getMax(), range.getFlat(), range.getFuzz()));
+                }
+            }
+        } catch (Throwable ignored) {}
     }
 
     // -------------------------------------------------------------------------

@@ -1188,48 +1188,49 @@ static void roam_android_install_hooks(void) {
         0xfd, 0x7b, 0x02, 0xa9, 0xf6, 0x57, 0x03, 0xa9
     };
 
-    void *target_4a = (void *)(lib_base + 0x1464be0);
-    if (memcmp(target_4a, EXPECTED_4A, 16) == 0) {
+    void *target_4a = g_p_recomp_lookup ? (void *)g_p_recomp_lookup(0x004a5d90) : (void *)(lib_base + 0x1464be0);
+    if (target_4a) {
         s_orig_4a5d90 = arm64_inline_hook(target_4a, (void *)hook_sub_004a5d90);
         __android_log_print(ANDROID_LOG_INFO, "NFSU2-Hook",
                             "Hooked sub_004a5d90 (garage car viewer) at %p (orig: %p)",
                             target_4a, s_orig_4a5d90);
     } else {
         __android_log_print(ANDROID_LOG_WARN, "NFSU2-Hook",
-                            "sub_004a5d90 prefix mismatch at %p", target_4a);
+                            "sub_004a5d90 lookup failed");
     }
 
-    void *target_5c = (void *)(lib_base + 0x2d762b0);
-    if (memcmp(target_5c, EXPECTED_5C, 16) == 0) {
+    void *target_5c = g_p_recomp_lookup ? (void *)g_p_recomp_lookup(0x005c7ec0) : (void *)(lib_base + 0x2d762b0);
+    if (target_5c) {
         s_orig_5c7ec0 = arm64_inline_hook(target_5c, (void *)hook_sub_005c7ec0);
         __android_log_print(ANDROID_LOG_INFO, "NFSU2-Hook",
                             "Hooked sub_005c7ec0 (camera setup) at %p (orig: %p)",
                             target_5c, s_orig_5c7ec0);
     } else {
         __android_log_print(ANDROID_LOG_WARN, "NFSU2-Hook",
-                            "sub_005c7ec0 prefix mismatch at %p", target_5c);
+                            "sub_005c7ec0 lookup failed");
     }
 
-    void *target_radar = (void *)(lib_base + 0x2754a8c);
-    if (memcmp(target_radar, EXPECTED_RADAR, 16) == 0) {
+    void *target_radar = g_p_recomp_lookup ? (void *)g_p_recomp_lookup(0x005caad0) : (void *)(lib_base + 0x2754a8c);
+    if (target_radar) {
         s_orig_5caad0 = arm64_inline_hook(target_radar, (void *)hook_sub_005caad0);
         __android_log_print(ANDROID_LOG_INFO, "NFSU2-Hook",
                             "Hooked sub_005caad0 (RenderRadar) at %p (orig: %p)",
                             target_radar, s_orig_5caad0);
     } else {
         __android_log_print(ANDROID_LOG_WARN, "NFSU2-Hook",
-                            "sub_005caad0 prefix mismatch at %p", target_radar);
+                            "sub_005caad0 lookup failed");
     }
 
-    void *target_recomp_hook = (void *)(lib_base + 0x004ae2dc);
-    if (memcmp(target_recomp_hook, EXPECTED_RECOMP_HOOK, 16) == 0) {
+    void *target_recomp_hook = dlsym(RTLD_DEFAULT, "recomp_hook");
+    if (!target_recomp_hook) target_recomp_hook = (void *)(lib_base + 0x004ae2dc);
+    if (target_recomp_hook) {
         s_orig_recomp_hook = (recomp_hook_func_t)arm64_inline_hook(target_recomp_hook, (void *)hook_recomp_hook);
         __android_log_print(ANDROID_LOG_INFO, "NFSU2-Hook",
                             "Hooked recomp_hook at %p (orig: %p)",
                             target_recomp_hook, s_orig_recomp_hook);
     } else {
         __android_log_print(ANDROID_LOG_WARN, "NFSU2-Hook",
-                            "recomp_hook prefix mismatch at %p", target_recomp_hook);
+                            "recomp_hook lookup failed");
     }
 
     // Also update k_functions dispatch table
