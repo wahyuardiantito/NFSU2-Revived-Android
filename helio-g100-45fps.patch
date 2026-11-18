@@ -1,0 +1,499 @@
+diff --git a/android/app/src/main/assets/dxvk.conf b/android/app/src/main/assets/dxvk.conf
+index f2fe10f..929079e 100644
+--- a/android/app/src/main/assets/dxvk.conf
++++ b/android/app/src/main/assets/dxvk.conf
+@@ -1,9 +1,9 @@
+ dxvk.enableStateCache = True
+ dxvk.enableAsync = True
+ dxvk.gplAsyncCache = True
+-dxvk.numCompilerThreads = 0
++dxvk.numCompilerThreads = 2
+ dxvk.useRawSsbo = Auto
+-dxvk.tilerMode = Auto
++dxvk.tilerMode = True
+ dxvk.enableGraphicsPipelineLibrary = True
+ dxvk.enableDescriptorBuffer = Auto
+ dxvk.enableDescriptorHeap = Auto
+diff --git a/android/app/src/main/cpp/roam/roam_affinity.c b/android/app/src/main/cpp/roam/roam_affinity.c
+index e8c0bbc..c937282 100644
+--- a/android/app/src/main/cpp/roam/roam_affinity.c
++++ b/android/app/src/main/cpp/roam/roam_affinity.c
+@@ -3,6 +3,7 @@
+ #include "roam_affinity.h"
+ #include <stdio.h>
+ #include <stdlib.h>
++#include <string.h>
+ #include <unistd.h>
+ #include <dirent.h>
+ #include <sched.h>
+@@ -11,30 +12,26 @@
+ int nfs_bind_to_perf_cores(void) {
+     long highest_freq = 0;
+     long freqs[64] = {0};
++    long caps[64] = {0};
+     int total_cpus = sysconf(_SC_NPROCESSORS_CONF);
+     if (total_cpus <= 0 || total_cpus > 64) total_cpus = 8;
+ 
+     for (int i = 0; i < total_cpus; i++) {
+         char path[128];
++        snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu%d/cpu_capacity", i);
++        FILE *fc = fopen(path, "r");
++        if (fc) {
++            long cap = 0;
++            if (fscanf(fc, "%ld", &cap) == 1 && cap > 0) caps[i] = cap;
++            fclose(fc);
++        }
++
+         snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu%d/cpufreq/cpuinfo_max_freq", i);
+         FILE *f = fopen(path, "r");
+         if (!f) {
+             snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu%d/cpufreq/scaling_max_freq", i);
+             f = fopen(path, "r");
+         }
+-        if (!f) {
+-            snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu%d/cpu_capacity", i);
+-            f = fopen(path, "r");
+-            if (f) {
+-                long cap = 0;
+-                if (fscanf(f, "%ld", &cap) == 1 && cap > 0) {
+-                    freqs[i] = cap * 1000;
+-                    if (freqs[i] > highest_freq) highest_freq = freqs[i];
+-                }
+-                fclose(f);
+-                continue;
+-            }
+-        }
+         if (f) {
+             long freq = 0;
+             if (fscanf(f, "%ld", &freq) == 1 && freq > 0) {
+@@ -45,12 +42,48 @@ int nfs_bind_to_perf_cores(void) {
+         }
+     }
+ 
+-    cpu_set_t cpuset;
++    cpu_set_t cpuset, little_set;
+     CPU_ZERO(&cpuset);
++    CPU_ZERO(&little_set);
+     int count = 0;
+-    long threshold = (long)(highest_freq * 0.80);
+ 
+-    if (highest_freq > 0) {
++    // 1. Primary: /proc/cpuinfo CPU part (separates Cortex-A76 0xd0b from Cortex-A55 0xd05 on Helio G100)
++    FILE *cpuinfo = fopen("/proc/cpuinfo", "r");
++    if (cpuinfo) {
++        char line[256];
++        int cur_cpu = -1;
++        while (fgets(line, sizeof(line), cpuinfo)) {
++            if (strncmp(line, "processor", 9) == 0) {
++                char *colon = strchr(line, ':');
++                if (colon) cur_cpu = atoi(colon + 1);
++            } else if (strncmp(line, "CPU part", 8) == 0 && cur_cpu >= 0 && cur_cpu < total_cpus) {
++                char *colon = strchr(line, ':');
++                if (colon) {
++                    unsigned long part = strtoul(colon + 1, NULL, 16);
++                    int is_little = (part == 0xd03 || part == 0xd05 || part == 0xd46 || part == 0xd80);
++                    if (part >= 0xd08 && !is_little) {
++                        CPU_SET(cur_cpu, &cpuset);
++                        count++;
++                    }
++                }
++            }
++        }
++        fclose(cpuinfo);
++    }
++
++    // 2. Secondary: EAS cpu_capacity >= 700
++    if (count == 0) {
++        for (int i = 0; i < total_cpus; i++) {
++            if (caps[i] >= 700) {
++                CPU_SET(i, &cpuset);
++                count++;
++            }
++        }
++    }
++
++    // 3. Tertiary: >= 93% of max clock (avoids 2.0 GHz A55 passing on 2.2 GHz G100)
++    if (count == 0 && highest_freq > 0) {
++        long threshold = (long)(highest_freq * 0.93);
+         for (int i = 0; i < total_cpus; i++) {
+             if (freqs[i] >= threshold) {
+                 CPU_SET(i, &cpuset);
+@@ -60,28 +93,51 @@ int nfs_bind_to_perf_cores(void) {
+     }
+ 
+     if (count == 0) {
+-        int start = total_cpus > 1 ? total_cpus / 2 : 0;
++        int start = total_cpus >= 4 ? total_cpus - 2 : (total_cpus > 1 ? total_cpus / 2 : 0);
+         for (int i = start; i < total_cpus; i++) {
+             CPU_SET(i, &cpuset);
+             count++;
+         }
+     }
+ 
++    int little_count = 0;
++    for (int i = 0; i < total_cpus; i++) {
++        if (!CPU_ISSET(i, &cpuset)) {
++            CPU_SET(i, &little_set);
++            little_count++;
++        }
++    }
++    if (little_count == 0) little_set = cpuset;
++
+     sched_setaffinity(getpid(), sizeof(cpu_set_t), &cpuset);
+     int ret = sched_setaffinity(0, sizeof(cpu_set_t), &cpuset);
+ 
+-    // Apply performance core affinity to all worker threads of the process
+     DIR *d = opendir("/proc/self/task");
+     if (d) {
+         struct dirent *de;
+         while ((de = readdir(d)) != NULL) {
+             int tid = atoi(de->d_name);
+             if (tid > 0) {
+-                sched_setaffinity(tid, sizeof(cpu_set_t), &cpuset);
++                char comm_path[128];
++                char comm[64] = {0};
++                snprintf(comm_path, sizeof(comm_path), "/proc/self/task/%d/comm", tid);
++                FILE *fc = fopen(comm_path, "r");
++                if (fc) {
++                    if (fgets(comm, sizeof(comm), fc)) {
++                        comm[strcspn(comm, "\r\n")] = 0;
++                    }
++                    fclose(fc);
++                }
++                int is_critical = (strcmp(comm, "GuestBootWorker") == 0 ||
++                                   strcmp(comm, "RenderThread") == 0 ||
++                                   strcmp(comm, "main") == 0 ||
++                                   strstr(comm, "dxvk-submit") != NULL ||
++                                   strstr(comm, "dxvk-cs") != NULL);
++                sched_setaffinity(tid, sizeof(cpu_set_t), is_critical ? &cpuset : &little_set);
+             }
+         }
+         closedir(d);
+     }
+-    __android_log_print(ANDROID_LOG_INFO, "NFSU2-PerfCores", "Bound process and threads to %d performance cores (ret=%d)", count, ret);
++    __android_log_print(ANDROID_LOG_INFO, "NFSU2-PerfCores", "Bound critical threads to %d big cores (ret=%d)", count, ret);
+     return ret;
+ }
+diff --git a/android/app/src/main/java/io/mininxd/nfsu2/GameOptions.java b/android/app/src/main/java/io/mininxd/nfsu2/GameOptions.java
+index 7713189..6a5f8c1 100644
+--- a/android/app/src/main/java/io/mininxd/nfsu2/GameOptions.java
++++ b/android/app/src/main/java/io/mininxd/nfsu2/GameOptions.java
+@@ -34,15 +34,15 @@ public final class GameOptions {
+             new Option(GRAPHICS_BACKEND, "Graphics API", "auto",
+                     new String[] {"auto", "vulkan", "opengl"},
+                     new String[] {"Auto", "Vulkan (DXVK)", "OpenGL (ES)"}),
+-            new Option(RESOLUTION, "Internal Resolution", "75",
++            new Option(RESOLUTION, "Internal Resolution", "65",
+                     new String[] {"25", "30", "35", "40", "45", "50", "55", "60", "65", "70", "75", "80", "85", "90", "95", "100", "125", "150", "200"},
+                     new String[] {"25%", "30%", "35%", "40%", "45%", "50%", "55%", "60%", "65%", "70%", "75%", "80%", "85%", "90%", "95%", "100%", "125%", "150%", "200%"}),
+             new Option(DRAW_DISTANCE, "Draw Distance", "performance",
+                     new String[] {"ultra_performance", "performance", "balanced", "extended", "original"},
+                     new String[] {"Ultra Performance", "Performance", "Balanced", "Extended", "Original"}),
+-            new Option(FPS, "FPS Limit", "30",
+-                    new String[] {"30", "60", "90", "120", "0"},
+-                    new String[] {"30 FPS", "60 FPS", "90 FPS", "120 FPS", "Uncapped"}),
++            new Option(FPS, "FPS Limit", "45",
++                    new String[] {"30", "45", "60", "90", "120", "0"},
++                    new String[] {"30 FPS", "45 FPS", "60 FPS", "90 FPS", "120 FPS", "Uncapped"}),
+             new Option(DISPLAY_LOGS, "Display Logs", "off",
+                     new String[] {"off", "compact", "full"},
+                     new String[] {"Off", "Compact", "Full"}),
+diff --git a/android/app/src/main/java/io/mininxd/nfsu2/GamePerformanceBooster.java b/android/app/src/main/java/io/mininxd/nfsu2/GamePerformanceBooster.java
+index 2025c77..9b8a532 100644
+--- a/android/app/src/main/java/io/mininxd/nfsu2/GamePerformanceBooster.java
++++ b/android/app/src/main/java/io/mininxd/nfsu2/GamePerformanceBooster.java
+@@ -120,13 +120,12 @@ public final class GamePerformanceBooster {
+             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+         } catch (Throwable ignored) {}
+ 
++        // Avoid forcing setSustainedPerformanceMode(true) on MediaTek Helio G100 / Mali-G57:
++        // Android's sustained-performance thermal cap locks CPU/GPU below 45 FPS clocks;
++        // thermal headroom is managed instead by the 45 FPS frame limiter.
+         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+             try {
+-                PowerManager pm = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
+-                if (pm != null && pm.isSustainedPerformanceModeSupported()) {
+-                    window.setSustainedPerformanceMode(true);
+-                    Log.i(TAG, "Sustained performance mode active");
+-                }
++                window.setSustainedPerformanceMode(false);
+             } catch (Throwable ignored) {}
+         }
+     }
+diff --git a/android/app/src/main/rust/graphics_cache/src/dxvk_tuner.rs b/android/app/src/main/rust/graphics_cache/src/dxvk_tuner.rs
+index 4c36812..23fc206 100644
+--- a/android/app/src/main/rust/graphics_cache/src/dxvk_tuner.rs
++++ b/android/app/src/main/rust/graphics_cache/src/dxvk_tuner.rs
+@@ -68,7 +68,7 @@ impl Default for DxvkProfileConfig {
+             no_explicit_front_buffer: true,
+             tear_free: true,
+             max_frame_latency: 2,
+-            num_compiler_threads: 4,
++            num_compiler_threads: 2,
+         }
+     }
+ }
+@@ -82,7 +82,7 @@ impl DxvkProfileConfig {
+         s.push_str("dxvk.gplAsyncCache = True\n");
+         s.push_str(&format!("dxvk.numCompilerThreads = {}\n", self.num_compiler_threads));
+         s.push_str("dxvk.useRawSsbo = Auto\n");
+-        s.push_str("dxvk.tilerMode = Auto\n");
++        s.push_str("dxvk.tilerMode = True\n");
+         s.push_str("dxvk.enableGraphicsPipelineLibrary = True\n");
+         s.push_str("dxvk.enableDescriptorBuffer = Auto\n");
+         s.push_str("dxvk.enableDescriptorHeap = Auto\n");
+@@ -248,7 +248,7 @@ mod tests {
+         assert!(formatted.contains("d3d9.strictConstantCopies = False"));
+         assert!(formatted.contains("d3d9.forceSwapchainMSAA = False"));
+         assert!(formatted.contains("dxvk.enableMemoryDefrag = False"));
+-        assert!(formatted.contains("dxvk.tilerMode = Auto"));
++        assert!(formatted.contains("dxvk.tilerMode = True"));
+         assert!(formatted.contains("dxvk.useRawSsbo = Auto"));
+         assert!(formatted.contains("d3d9.maxFrameLatency = 2"));
+         assert!(formatted.contains("dxvk.enableDescriptorBuffer = Auto"));
+diff --git a/android/app/src/main/rust/perf_cores/src/lib.rs b/android/app/src/main/rust/perf_cores/src/lib.rs
+index 1129bd1..66984c8 100644
+--- a/android/app/src/main/rust/perf_cores/src/lib.rs
++++ b/android/app/src/main/rust/perf_cores/src/lib.rs
+@@ -33,6 +33,7 @@ pub struct CoreInfo {
+ pub struct CpuCluster {
+     pub total_cores: usize,
+     pub perf_cores_mask: u64,
++    pub little_cores_mask: u64,
+     pub perf_core_count: usize,
+     pub cores: Vec<CoreInfo>,
+ }
+@@ -82,57 +83,73 @@ impl CpuCluster {
+             });
+         }
+ 
+-        // Performance threshold: cores within 80% of the SoC's highest frequency
+-        let threshold = if highest_freq > 0 {
+-            (highest_freq as f64 * 0.80) as u64
+-        } else {
+-            0
+-        };
+-
+         let mut perf_cores_mask: u64 = 0;
+         let mut perf_core_count = 0;
+ 
+-        for core in &mut cores {
+-            if highest_freq > 0 && core.max_freq_khz >= threshold {
+-                core.is_performance = true;
+-                perf_cores_mask |= 1u64 << core.cpu_id;
+-                perf_core_count += 1;
++        // 1. Primary detection: /proc/cpuinfo CPU part ID.
++        // Crucial for Helio G100 / G99 where 2x Cortex-A76 (2.2 GHz, 0xd0b) and
++        // 6x Cortex-A55 (2.0 GHz, 0xd05) differ by <10% clock speed, fooling freq ratios.
++        if let Ok(cpuinfo) = fs::read_to_string("/proc/cpuinfo") {
++            let mut cur_cpu: i32 = -1;
++            for line in cpuinfo.lines() {
++                let trimmed = line.trim();
++                if trimmed.starts_with("processor") {
++                    if let Some(colon) = trimmed.find(':') {
++                        if let Ok(cpu_id) = trimmed[colon + 1..].trim().parse::<i32>() {
++                            cur_cpu = cpu_id;
++                        }
++                    }
++                } else if trimmed.starts_with("CPU part") && cur_cpu >= 0 && (cur_cpu as usize) < total_cores {
++                    if let Some(colon) = trimmed.find(':') {
++                        let part_str = trimmed[colon + 1..].trim();
++                        let part = u32::from_str_radix(part_str.trim_start_matches("0x"), 16).unwrap_or(0);
++                        let is_little = part == 0xd03 || part == 0xd05 || part == 0xd46 || part == 0xd80;
++                        if part >= 0xd08 && !is_little {
++                            perf_cores_mask |= 1u64 << (cur_cpu as usize);
++                            perf_core_count += 1;
++                            if let Some(c) = cores.get_mut(cur_cpu as usize) {
++                                c.is_performance = true;
++                            }
++                        }
++                    }
++                }
+             }
+         }
+ 
+-        // Secondary detection: Parse /proc/cpuinfo (always permitted by Android 14 SELinux)
++        // 2. Secondary detection: ARM EAS cpu_capacity (>= 700 separates A76 ~1024 from A55 ~380-450)
+         if perf_cores_mask == 0 {
+-            if let Ok(cpuinfo) = fs::read_to_string("/proc/cpuinfo") {
+-                let mut cur_cpu: i32 = -1;
+-                for line in cpuinfo.lines() {
+-                    let trimmed = line.trim();
+-                    if trimmed.starts_with("processor") {
+-                        if let Some(colon) = trimmed.find(':') {
+-                            if let Ok(cpu_id) = trimmed[colon + 1..].trim().parse::<i32>() {
+-                                cur_cpu = cpu_id;
+-                            }
+-                        }
+-                    } else if trimmed.starts_with("CPU part") && cur_cpu >= 0 && (cur_cpu as usize) < total_cores {
+-                        if let Some(colon) = trimmed.find(':') {
+-                            let part_str = trimmed[colon + 1..].trim();
+-                            let part = u32::from_str_radix(part_str.trim_start_matches("0x"), 16).unwrap_or(0);
+-                            let is_little = part == 0xd03 || part == 0xd05 || part == 0xd46 || part == 0xd80;
+-                            if part >= 0xd08 && !is_little {
+-                                perf_cores_mask |= 1u64 << (cur_cpu as usize);
+-                                perf_core_count += 1;
+-                                if let Some(c) = cores.get_mut(cur_cpu as usize) {
+-                                    c.is_performance = true;
+-                                }
+-                            }
++            for id in 0..total_cores {
++                let cap_path = format!("/sys/devices/system/cpu/cpu{}/cpu_capacity", id);
++                if let Some(cap) = fs::read_to_string(&cap_path)
++                    .ok()
++                    .and_then(|v| v.trim().parse::<u64>().ok())
++                {
++                    if cap >= 700 {
++                        perf_cores_mask |= 1u64 << id;
++                        perf_core_count += 1;
++                        if let Some(c) = cores.get_mut(id) {
++                            c.is_performance = true;
+                         }
+                     }
+                 }
+             }
+         }
+ 
+-        // Universal fallback: upper half of CPU cores
++        // 3. Tertiary detection: top frequency tier (>= 93% of highest freq so 2.0 GHz A55 < 2.046 GHz)
++        if perf_cores_mask == 0 && highest_freq > 0 {
++            let threshold = (highest_freq as f64 * 0.93) as u64;
++            for core in &mut cores {
++                if core.max_freq_khz >= threshold {
++                    core.is_performance = true;
++                    perf_cores_mask |= 1u64 << core.cpu_id;
++                    perf_core_count += 1;
++                }
++            }
++        }
++
++        // 4. Universal fallback: upper 2 cores (typical 2+6 DynamIQ layout)
+         if perf_cores_mask == 0 && total_cores > 1 {
+-            let start = total_cores / 2;
++            let start = total_cores.saturating_sub(2).max(total_cores / 2);
+             for id in start..total_cores {
+                 perf_cores_mask |= 1u64 << id;
+                 perf_core_count += 1;
+@@ -145,9 +162,16 @@ impl CpuCluster {
+             perf_core_count = 1;
+         }
+ 
++        let mut all_mask: u64 = 0;
++        for id in 0..total_cores.min(64) {
++            all_mask |= 1u64 << id;
++        }
++        let little_cores_mask = all_mask & !perf_cores_mask;
++
+         CpuCluster {
+             total_cores,
+             perf_cores_mask,
++            little_cores_mask,
+             perf_core_count,
+             cores,
+         }
+@@ -167,52 +191,71 @@ impl CpuCluster {
+ 
+     /// Binds the calling thread, process, and all worker threads to the performance cores.
+     pub fn apply_affinity(&self) -> Result<(), i32> {
+-        let mask = self.perf_cores_mask;
++        let perf_mask = self.perf_cores_mask;
++        let little_mask = if self.little_cores_mask != 0 {
++            self.little_cores_mask
++        } else {
++            self.perf_cores_mask
++        };
+         unsafe {
+             // Linux sched_setaffinity: 0 = calling thread, getpid() = main thread
+-            let mask_val = mask as c_long;
++            let perf_val = perf_mask as c_long;
++            let little_val = little_mask as c_long;
+             let _ = libc::syscall(
+                 libc::SYS_sched_setaffinity,
+                 libc::getpid() as c_int,
+                 std::mem::size_of::<c_long>(),
+-                &mask_val as *const c_long,
++                &perf_val as *const c_long,
+             );
+             let ret = libc::syscall(
+                 libc::SYS_sched_setaffinity,
+                 0 as c_int,
+                 std::mem::size_of::<c_long>(),
+-                &mask_val as *const c_long,
++                &perf_val as *const c_long,
+             );
+ 
+             // Elevate main and calling thread priority (-10 nice) to maintain high CPU frequencies
+             let _ = libc::setpriority(libc::PRIO_PROCESS, libc::getpid() as u32, -10);
+             let _ = libc::setpriority(libc::PRIO_PROCESS, 0, -10);
+ 
+-            // Bind every existing thread in /proc/self/task (GuestBootWorker, audio, render, etc.)
++            // Role-based affinity for 2+6 DynamIQ SoCs (Helio G100):
++            // Keep GuestBootWorker / RenderThread / main / dxvk submit on the 2x A76 cores;
++            // offload shader compilers, audio, binder, and background workers to A55 cores.
+             if let Ok(entries) = fs::read_dir("/proc/self/task") {
+                 for entry in entries.flatten() {
+                     if let Ok(tid) = entry.file_name().to_string_lossy().parse::<i32>() {
+-                        let _ = libc::syscall(
+-                            libc::SYS_sched_setaffinity,
+-                            tid as c_int,
+-                            std::mem::size_of::<c_long>(),
+-                            &mask_val as *const c_long,
+-                        );
+-
+-                        // Prioritize audio, render, and emulated guest workers
+                         let comm_path = format!("/proc/self/task/{}/comm", tid);
+-                        if let Ok(comm) = fs::read_to_string(&comm_path) {
+-                            let n = comm.trim();
+-                            if n == "GuestBootWorker" || n == "RenderThread" || n == "main"
+-                                || n.starts_with("AAudio") || n.contains("audio") || n.contains("nfs")
+-                            {
+-                                let _ = libc::setpriority(libc::PRIO_PROCESS, tid as u32, -10);
++                        let comm = fs::read_to_string(&comm_path).unwrap_or_default();
++                        let n = comm.trim();
++                        let is_critical = n == "GuestBootWorker"
++                            || n == "RenderThread"
++                            || n == "main"
++                            || n.contains("dxvk-submit")
++                            || n.contains("dxvk-cs");
++                        let is_audio = n.starts_with("AAudio") || n.contains("audio");
++
++                        if is_critical {
++                            let _ = libc::syscall(
++                                libc::SYS_sched_setaffinity,
++                                tid as c_int,
++                                std::mem::size_of::<c_long>(),
++                                &perf_val as *const c_long,
++                            );
++                            let _ = libc::setpriority(libc::PRIO_PROCESS, tid as u32, -10);
++                        } else {
++                            let _ = libc::syscall(
++                                libc::SYS_sched_setaffinity,
++                                tid as c_int,
++                                std::mem::size_of::<c_long>(),
++                                &little_val as *const c_long,
++                            );
++                            if is_audio {
++                                let _ = libc::setpriority(libc::PRIO_PROCESS, tid as u32, -6);
+                             }
+                         }
+                     }
+                 }
+             }
+-
+             if ret == 0 {
+                 Ok(())
+             } else {
+diff --git a/ports/dxvk_android/CMakeLists.txt b/ports/dxvk_android/CMakeLists.txt
+index e636fa4..7c9c5fd 100644
+--- a/ports/dxvk_android/CMakeLists.txt
++++ b/ports/dxvk_android/CMakeLists.txt
+@@ -88,6 +88,9 @@ target_include_directories(dxvk_android PRIVATE
+   "${DXBC_SPV_DIR}/include"
+ )
+ target_compile_options(dxvk_android PRIVATE -O3 -fvisibility=hidden -Wno-deprecated-declarations -Wno-unused-variable -Wno-unused-parameter)
++if(ANDROID AND ANDROID_ABI STREQUAL "arm64-v8a")
++  target_compile_options(dxvk_android PRIVATE -march=armv8.2-a -mtune=cortex-a76)
++endif()
+ find_library(DXVK_VULKAN_LIBRARY NAMES vulkan libvulkan.so.1 REQUIRED)
+ target_link_libraries(dxvk_android PRIVATE ${DXVK_VULKAN_LIBRARY})
+ if(ANDROID)
