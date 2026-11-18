@@ -68,7 +68,7 @@ impl Default for DxvkProfileConfig {
             no_explicit_front_buffer: true,
             tear_free: true,
             max_frame_latency: 2,
-            num_compiler_threads: 4,
+            num_compiler_threads: 2,
         }
     }
 }
@@ -82,7 +82,7 @@ impl DxvkProfileConfig {
         s.push_str("dxvk.gplAsyncCache = True\n");
         s.push_str(&format!("dxvk.numCompilerThreads = {}\n", self.num_compiler_threads));
         s.push_str("dxvk.useRawSsbo = Auto\n");
-        s.push_str("dxvk.tilerMode = Auto\n");
+        s.push_str("dxvk.tilerMode = True\n");
         s.push_str("dxvk.enableGraphicsPipelineLibrary = True\n");
         s.push_str("dxvk.enableDescriptorBuffer = Auto\n");
         s.push_str("dxvk.enableDescriptorHeap = Auto\n");
@@ -248,7 +248,7 @@ mod tests {
         assert!(formatted.contains("d3d9.strictConstantCopies = False"));
         assert!(formatted.contains("d3d9.forceSwapchainMSAA = False"));
         assert!(formatted.contains("dxvk.enableMemoryDefrag = False"));
-        assert!(formatted.contains("dxvk.tilerMode = Auto"));
+        assert!(formatted.contains("dxvk.tilerMode = True"));
         assert!(formatted.contains("dxvk.useRawSsbo = Auto"));
         assert!(formatted.contains("d3d9.maxFrameLatency = 2"));
         assert!(formatted.contains("dxvk.enableDescriptorBuffer = Auto"));

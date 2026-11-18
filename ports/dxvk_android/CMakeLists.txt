@@ -88,6 +88,9 @@ target_include_directories(dxvk_android PRIVATE
   "${DXBC_SPV_DIR}/include"
 )
 target_compile_options(dxvk_android PRIVATE -O3 -fvisibility=hidden -Wno-deprecated-declarations -Wno-unused-variable -Wno-unused-parameter)
+if(ANDROID AND ANDROID_ABI STREQUAL "arm64-v8a")
+  target_compile_options(dxvk_android PRIVATE -march=armv8.2-a -mtune=cortex-a76)
+endif()
 find_library(DXVK_VULKAN_LIBRARY NAMES vulkan libvulkan.so.1 REQUIRED)
 target_link_libraries(dxvk_android PRIVATE ${DXVK_VULKAN_LIBRARY})
 if(ANDROID)

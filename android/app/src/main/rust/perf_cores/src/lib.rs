@@ -33,6 +33,7 @@ pub struct CoreInfo {
 pub struct CpuCluster {
     pub total_cores: usize,
     pub perf_cores_mask: u64,
+    pub little_cores_mask: u64,
     pub perf_core_count: usize,
     pub cores: Vec<CoreInfo>,
 }
@@ -82,47 +83,32 @@ impl CpuCluster {
             });
         }
 
-        // Performance threshold: cores within 80% of the SoC's highest frequency
-        let threshold = if highest_freq > 0 {
-            (highest_freq as f64 * 0.80) as u64
-        } else {
-            0
-        };
-
         let mut perf_cores_mask: u64 = 0;
         let mut perf_core_count = 0;
 
-        for core in &mut cores {
-            if highest_freq > 0 && core.max_freq_khz >= threshold {
-                core.is_performance = true;
-                perf_cores_mask |= 1u64 << core.cpu_id;
-                perf_core_count += 1;
-            }
-        }
-
-        // Secondary detection: Parse /proc/cpuinfo (always permitted by Android 14 SELinux)
-        if perf_cores_mask == 0 {
-            if let Ok(cpuinfo) = fs::read_to_string("/proc/cpuinfo") {
-                let mut cur_cpu: i32 = -1;
-                for line in cpuinfo.lines() {
-                    let trimmed = line.trim();
-                    if trimmed.starts_with("processor") {
-                        if let Some(colon) = trimmed.find(':') {
-                            if let Ok(cpu_id) = trimmed[colon + 1..].trim().parse::<i32>() {
-                                cur_cpu = cpu_id;
-                            }
+        // 1. Primary detection: /proc/cpuinfo CPU part ID.
+        // Crucial for Helio G100 / G99 where 2x Cortex-A76 (2.2 GHz, 0xd0b) and
+        // 6x Cortex-A55 (2.0 GHz, 0xd05) differ by <10% clock speed, fooling freq ratios.
+        if let Ok(cpuinfo) = fs::read_to_string("/proc/cpuinfo") {
+            let mut cur_cpu: i32 = -1;
+            for line in cpuinfo.lines() {
+                let trimmed = line.trim();
+                if trimmed.starts_with("processor") {
+                    if let Some(colon) = trimmed.find(':') {
+                        if let Ok(cpu_id) = trimmed[colon + 1..].trim().parse::<i32>() {
+                            cur_cpu = cpu_id;
                         }
-                    } else if trimmed.starts_with("CPU part") && cur_cpu >= 0 && (cur_cpu as usize) < total_cores {
-                        if let Some(colon) = trimmed.find(':') {
-                            let part_str = trimmed[colon + 1..].trim();
-                            let part = u32::from_str_radix(part_str.trim_start_matches("0x"), 16).unwrap_or(0);
-                            let is_little = part == 0xd03 || part == 0xd05 || part == 0xd46 || part == 0xd80;
-                            if part >= 0xd08 && !is_little {
-                                perf_cores_mask |= 1u64 << (cur_cpu as usize);
-                                perf_core_count += 1;
-                                if let Some(c) = cores.get_mut(cur_cpu as usize) {
-                                    c.is_performance = true;
-                                }
+                    }
+                } else if trimmed.starts_with("CPU part") && cur_cpu >= 0 && (cur_cpu as usize) < total_cores {
+                    if let Some(colon) = trimmed.find(':') {
+                        let part_str = trimmed[colon + 1..].trim();
+                        let part = u32::from_str_radix(part_str.trim_start_matches("0x"), 16).unwrap_or(0);
+                        let is_little = part == 0xd03 || part == 0xd05 || part == 0xd46 || part == 0xd80;
+                        if part >= 0xd08 && !is_little {
+                            perf_cores_mask |= 1u64 << (cur_cpu as usize);
+                            perf_core_count += 1;
+                            if let Some(c) = cores.get_mut(cur_cpu as usize) {
+                                c.is_performance = true;
                             }
                         }
                     }
@@ -130,9 +116,40 @@ impl CpuCluster {
             }
         }
 
-        // Universal fallback: upper half of CPU cores
+        // 2. Secondary detection: ARM EAS cpu_capacity (>= 700 separates A76 ~1024 from A55 ~380-450)
+        if perf_cores_mask == 0 {
+            for id in 0..total_cores {
+                let cap_path = format!("/sys/devices/system/cpu/cpu{}/cpu_capacity", id);
+                if let Some(cap) = fs::read_to_string(&cap_path)
+                    .ok()
+                    .and_then(|v| v.trim().parse::<u64>().ok())
+                {
+                    if cap >= 700 {
+                        perf_cores_mask |= 1u64 << id;
+                        perf_core_count += 1;
+                        if let Some(c) = cores.get_mut(id) {
+                            c.is_performance = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Tertiary detection: top frequency tier (>= 93% of highest freq so 2.0 GHz A55 < 2.046 GHz)
+        if perf_cores_mask == 0 && highest_freq > 0 {
+            let threshold = (highest_freq as f64 * 0.93) as u64;
+            for core in &mut cores {
+                if core.max_freq_khz >= threshold {
+                    core.is_performance = true;
+                    perf_cores_mask |= 1u64 << core.cpu_id;
+                    perf_core_count += 1;
+                }
+            }
+        }
+
+        // 4. Universal fallback: upper 2 cores (typical 2+6 DynamIQ layout)
         if perf_cores_mask == 0 && total_cores > 1 {
-            let start = total_cores / 2;
+            let start = total_cores.saturating_sub(2).max(total_cores / 2);
             for id in start..total_cores {
                 perf_cores_mask |= 1u64 << id;
                 perf_core_count += 1;
@@ -145,9 +162,16 @@ impl CpuCluster {
             perf_core_count = 1;
         }
 
+        let mut all_mask: u64 = 0;
+        for id in 0..total_cores.min(64) {
+            all_mask |= 1u64 << id;
+        }
+        let little_cores_mask = all_mask & !perf_cores_mask;
+
         CpuCluster {
             total_cores,
             perf_cores_mask,
+            little_cores_mask,
             perf_core_count,
             cores,
         }
@@ -167,52 +191,71 @@ impl CpuCluster {
 
     /// Binds the calling thread, process, and all worker threads to the performance cores.
     pub fn apply_affinity(&self) -> Result<(), i32> {
-        let mask = self.perf_cores_mask;
+        let perf_mask = self.perf_cores_mask;
+        let little_mask = if self.little_cores_mask != 0 {
+            self.little_cores_mask
+        } else {
+            self.perf_cores_mask
+        };
         unsafe {
             // Linux sched_setaffinity: 0 = calling thread, getpid() = main thread
-            let mask_val = mask as c_long;
+            let perf_val = perf_mask as c_long;
+            let little_val = little_mask as c_long;
             let _ = libc::syscall(
                 libc::SYS_sched_setaffinity,
                 libc::getpid() as c_int,
                 std::mem::size_of::<c_long>(),
-                &mask_val as *const c_long,
+                &perf_val as *const c_long,
             );
             let ret = libc::syscall(
                 libc::SYS_sched_setaffinity,
                 0 as c_int,
                 std::mem::size_of::<c_long>(),
-                &mask_val as *const c_long,
+                &perf_val as *const c_long,
             );
 
             // Elevate main and calling thread priority (-10 nice) to maintain high CPU frequencies
             let _ = libc::setpriority(libc::PRIO_PROCESS, libc::getpid() as u32, -10);
             let _ = libc::setpriority(libc::PRIO_PROCESS, 0, -10);
 
-            // Bind every existing thread in /proc/self/task (GuestBootWorker, audio, render, etc.)
+            // Role-based affinity for 2+6 DynamIQ SoCs (Helio G100):
+            // Keep GuestBootWorker / RenderThread / main / dxvk submit on the 2x A76 cores;
+            // offload shader compilers, audio, binder, and background workers to A55 cores.
             if let Ok(entries) = fs::read_dir("/proc/self/task") {
                 for entry in entries.flatten() {
                     if let Ok(tid) = entry.file_name().to_string_lossy().parse::<i32>() {
-                        let _ = libc::syscall(
-                            libc::SYS_sched_setaffinity,
-                            tid as c_int,
-                            std::mem::size_of::<c_long>(),
-                            &mask_val as *const c_long,
-                        );
-
-                        // Prioritize audio, render, and emulated guest workers
                         let comm_path = format!("/proc/self/task/{}/comm", tid);
-                        if let Ok(comm) = fs::read_to_string(&comm_path) {
-                            let n = comm.trim();
-                            if n == "GuestBootWorker" || n == "RenderThread" || n == "main"
-                                || n.starts_with("AAudio") || n.contains("audio") || n.contains("nfs")
-                            {
-                                let _ = libc::setpriority(libc::PRIO_PROCESS, tid as u32, -10);
+                        let comm = fs::read_to_string(&comm_path).unwrap_or_default();
+                        let n = comm.trim();
+                        let is_critical = n == "GuestBootWorker"
+                            || n == "RenderThread"
+                            || n == "main"
+                            || n.contains("dxvk-submit")
+                            || n.contains("dxvk-cs");
+                        let is_audio = n.starts_with("AAudio") || n.contains("audio");
+
+                        if is_critical {
+                            let _ = libc::syscall(
+                                libc::SYS_sched_setaffinity,
+                                tid as c_int,
+                                std::mem::size_of::<c_long>(),
+                                &perf_val as *const c_long,
+                            );
+                            let _ = libc::setpriority(libc::PRIO_PROCESS, tid as u32, -10);
+                        } else {
+                            let _ = libc::syscall(
+                                libc::SYS_sched_setaffinity,
+                                tid as c_int,
+                                std::mem::size_of::<c_long>(),
+                                &little_val as *const c_long,
+                            );
+                            if is_audio {
+                                let _ = libc::setpriority(libc::PRIO_PROCESS, tid as u32, -6);
                             }
                         }
                     }
                 }
             }
-
             if ret == 0 {
                 Ok(())
             } else {

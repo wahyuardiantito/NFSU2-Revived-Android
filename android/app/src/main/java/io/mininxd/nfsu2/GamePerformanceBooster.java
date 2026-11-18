@@ -120,13 +120,12 @@ public final class GamePerformanceBooster {
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         } catch (Throwable ignored) {}
 
+        // Avoid forcing setSustainedPerformanceMode(true) on MediaTek Helio G100 / Mali-G57:
+        // Android's sustained-performance thermal cap locks CPU/GPU below 45 FPS clocks;
+        // thermal headroom is managed instead by the 45 FPS frame limiter.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             try {
-                PowerManager pm = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
-                if (pm != null && pm.isSustainedPerformanceModeSupported()) {
-                    window.setSustainedPerformanceMode(true);
-                    Log.i(TAG, "Sustained performance mode active");
-                }
+                window.setSustainedPerformanceMode(false);
             } catch (Throwable ignored) {}
         }
     }
