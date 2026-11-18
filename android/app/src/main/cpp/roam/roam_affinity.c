@@ -42,9 +42,11 @@ int nfs_bind_to_perf_cores(void) {
         }
     }
 
-    cpu_set_t cpuset, little_set;
+    cpu_set_t cpuset, little_set, all_set;
     CPU_ZERO(&cpuset);
     CPU_ZERO(&little_set);
+    CPU_ZERO(&all_set);
+    for (int i = 0; i < total_cpus; i++) CPU_SET(i, &all_set);
     int count = 0;
 
     // 1. Primary: /proc/cpuinfo CPU part (separates Cortex-A76 0xd0b from Cortex-A55 0xd05 on Helio G100)
@@ -128,12 +130,16 @@ int nfs_bind_to_perf_cores(void) {
                     }
                     fclose(fc);
                 }
-                int is_critical = (strcmp(comm, "GuestBootWorker") == 0 ||
-                                   strcmp(comm, "RenderThread") == 0 ||
+                int is_critical = (strstr(comm, "NFSU2") != NULL ||
+                                   strstr(comm, "MainRender") != NULL ||
+                                   strstr(comm, "GuestBoot") != NULL ||
+                                   strstr(comm, "RenderThread") != NULL ||
                                    strcmp(comm, "main") == 0 ||
-                                   strstr(comm, "dxvk-submit") != NULL ||
-                                   strstr(comm, "dxvk-cs") != NULL);
-                sched_setaffinity(tid, sizeof(cpu_set_t), is_critical ? &cpuset : &little_set);
+                                   strstr(comm, "dxvk") != NULL ||
+                                   strstr(comm, "mininxd") != NULL ||
+                                   strstr(comm, "nfsu2") != NULL ||
+                                   comm[0] == '\0');
+                sched_setaffinity(tid, sizeof(cpu_set_t), is_critical ? &cpuset : &all_set);
             }
         }
         closedir(d);

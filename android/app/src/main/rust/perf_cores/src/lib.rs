@@ -227,11 +227,15 @@ impl CpuCluster {
                         let comm_path = format!("/proc/self/task/{}/comm", tid);
                         let comm = fs::read_to_string(&comm_path).unwrap_or_default();
                         let n = comm.trim();
-                        let is_critical = n == "GuestBootWorker"
-                            || n == "RenderThread"
+                        let is_critical = n.contains("NFSU2")
+                            || n.contains("MainRender")
+                            || n.contains("GuestBoot")
+                            || n.contains("RenderThread")
                             || n == "main"
-                            || n.contains("dxvk-submit")
-                            || n.contains("dxvk-cs");
+                            || n.contains("dxvk")
+                            || n.contains("mininxd")
+                            || n.contains("nfsu2")
+                            || n.is_empty();
                         let is_audio = n.starts_with("AAudio") || n.contains("audio");
 
                         if is_critical {
@@ -243,11 +247,13 @@ impl CpuCluster {
                             );
                             let _ = libc::setpriority(libc::PRIO_PROCESS, tid as u32, -10);
                         } else {
+                            // Non-critical background threads get all cores instead of being locked to slow little cores
+                            let all_val = all_mask as c_long;
                             let _ = libc::syscall(
                                 libc::SYS_sched_setaffinity,
                                 tid as c_int,
                                 std::mem::size_of::<c_long>(),
-                                &little_val as *const c_long,
+                                &all_val as *const c_long,
                             );
                             if is_audio {
                                 let _ = libc::setpriority(libc::PRIO_PROCESS, tid as u32, -6);
