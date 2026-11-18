@@ -11,7 +11,7 @@ struct UniversalGpuInfo {
     std::string libraryName;
     std::string deviceName;
     std::string driverDescription;
-    uint32_t apiVersion = VK_API_VERSION_1_3;
+    uint32_t apiVersion = VK_API_VERSION_1_1;
     uint32_t driverVersion = 0;
     uint32_t vendorId = 0;
     std::string errorMessage;

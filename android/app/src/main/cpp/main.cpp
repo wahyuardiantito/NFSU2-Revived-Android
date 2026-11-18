@@ -95,7 +95,7 @@ struct Renderer {
         const char* extensions[] = {VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_ANDROID_SURFACE_EXTENSION_NAME};
         VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
         app.pApplicationName = "NFSU2 Vulkan bootstrap";
-        app.apiVersion = VK_API_VERSION_1_3;
+        app.apiVersion = VK_API_VERSION_1_1;
         VkInstanceCreateInfo ci{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
         ci.pApplicationInfo = &app; ci.enabledExtensionCount = 2; ci.ppEnabledExtensionNames = extensions;
         VK_CHECK(vkCreateInstance(&ci, nullptr, &instance));
@@ -127,12 +127,10 @@ struct Renderer {
             if (gpu) {
                 if (universal_gpu_is_custom()) {
                     s_vulkanApiVersion = universal_gpu_get_api_version();
-                } else if (props.apiVersion >= VK_API_VERSION_1_3) {
-                    s_vulkanApiVersion = props.apiVersion;
                 } else {
-                    s_vulkanApiVersion = VK_API_VERSION_1_3;
+                    s_vulkanApiVersion = props.apiVersion;
                 }
-                __android_log_print(ANDROID_LOG_INFO, "NFSU2", "GPU %s; API %u.%u (Vulkan 1.3 presentation active)", props.deviceName,
+                __android_log_print(ANDROID_LOG_INFO, "NFSU2", "GPU %s; API %u.%u (Vulkan presentation active)", props.deviceName,
                     VK_VERSION_MAJOR(s_vulkanApiVersion), VK_VERSION_MINOR(s_vulkanApiVersion));
                 auto vertexMissing = unsupportedD3DVertexFormats(candidate, vkGetPhysicalDeviceFormatProperties);
                 __android_log_print(vertexMissing.empty() ? ANDROID_LOG_INFO : ANDROID_LOG_WARN, "NFSU2",
@@ -463,7 +461,7 @@ extern "C" JNIEXPORT void JNICALL Java_io_mininxd_nfsu2_GameActivity_nativeCpuTe
 // drives the GPU through two Vulkan drivers.
 static bool customVulkanDriver=false;
 static std::string customVulkanError;
-static uint32_t s_vulkanApiVersion = VK_API_VERSION_1_3;
+static uint32_t s_vulkanApiVersion = VK_API_VERSION_1_1;
 static std::string s_vulkanDriverDesc;
 extern "C" void dxvkAndroidSetInstanceProcAddr(PFN_vkGetInstanceProcAddr entry);
 extern "C" JNIEXPORT void JNICALL Java_io_mininxd_nfsu2_GameActivity_nativeGpuDriver(JNIEnv* env,jclass,jstring hooks,jstring temp,jstring directory,jstring library){
@@ -480,8 +478,8 @@ extern "C" JNIEXPORT void JNICALL Java_io_mininxd_nfsu2_GameActivity_nativeGpuDr
     dxvkAndroidSetInstanceProcAddr(entry);
     s_vulkanDriverDesc = l;
     s_vulkanApiVersion = universal_gpu_get_api_version();
-    if (s_vulkanApiVersion < VK_API_VERSION_1_3) {
-        s_vulkanApiVersion = VK_API_VERSION_1_3;
+    if (s_vulkanApiVersion < VK_API_VERSION_1_1) {
+        s_vulkanApiVersion = VK_API_VERSION_1_1;
     }
     __android_log_print(ANDROID_LOG_INFO, "NFSU2", "Custom Vulkan driver active: %s (API %u.%u, Device: %s)",
         l.c_str(), VK_API_VERSION_MAJOR(s_vulkanApiVersion), VK_API_VERSION_MINOR(s_vulkanApiVersion),

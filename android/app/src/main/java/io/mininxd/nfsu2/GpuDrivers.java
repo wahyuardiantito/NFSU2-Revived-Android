@@ -70,17 +70,7 @@ final class GpuDrivers {
             for (Driver driver : all) if (driver.id.equals(id)) return driver;
         }
 
-        // Auto-select PanVK for Mali or Turnip for Adreno if not explicitly chosen
-        if (id.isEmpty() && !all.isEmpty()) {
-            for (Driver driver : all) {
-                if (driver.name.toLowerCase(Locale.ROOT).contains("panvk") ||
-                    driver.library.toLowerCase(Locale.ROOT).contains("panfrost")) {
-                    select(context, driver.id);
-                    Log.i(TAG, "Auto-selected PanVK Vulkan driver for Mali GPU: " + driver.name);
-                    return driver;
-                }
-            }
-        }
+        // Default to System Driver unless user explicitly selected a custom driver
         return null;
     }
 

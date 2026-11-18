@@ -450,6 +450,49 @@ uint32_t dispatchGuestD3D9(uint32_t token,const uint32_t* args,uint32_t* argumen
         }();
         if(s_filter_state && s_filter_state(method, args, argumentCount)){
             return D3D_OK;
+        } else if(!s_filter_state) {
+            static uint32_t s_cpp_rs[256];
+            static bool s_cpp_rs_valid[256] = {false};
+            static uint32_t s_cpp_ss[16][16];
+            static bool s_cpp_ss_valid[16][16] = {false};
+            static uint32_t s_cpp_tss[8][34];
+            static bool s_cpp_tss_valid[8][34] = {false};
+            static uint32_t s_cpp_tex[16];
+            static bool s_cpp_tex_valid[16] = {false};
+
+            if (method == 57 && args[1] < 256) {
+                uint32_t state = args[1], val = args[2];
+                if (s_cpp_rs_valid[state] && s_cpp_rs[state] == val) {
+                    *argumentCount = 3;
+                    return D3D_OK;
+                }
+                s_cpp_rs[state] = val;
+                s_cpp_rs_valid[state] = true;
+            } else if (method == 69 && args[1] < 16 && args[2] < 16) {
+                uint32_t sampler = args[1], type = args[2], val = args[3];
+                if (s_cpp_ss_valid[sampler][type] && s_cpp_ss[sampler][type] == val) {
+                    *argumentCount = 4;
+                    return D3D_OK;
+                }
+                s_cpp_ss[sampler][type] = val;
+                s_cpp_ss_valid[sampler][type] = true;
+            } else if (method == 67 && args[1] < 8 && args[2] < 34) {
+                uint32_t stage = args[1], type = args[2], val = args[3];
+                if (s_cpp_tss_valid[stage][type] && s_cpp_tss[stage][type] == val) {
+                    *argumentCount = 4;
+                    return D3D_OK;
+                }
+                s_cpp_tss[stage][type] = val;
+                s_cpp_tss_valid[stage][type] = true;
+            } else if (method == 65 && args[1] < 16) {
+                uint32_t stage = args[1], tex = args[2];
+                if (s_cpp_tex_valid[stage] && s_cpp_tex[stage] == tex) {
+                    *argumentCount = 3;
+                    return D3D_OK;
+                }
+                s_cpp_tex[stage] = tex;
+                s_cpp_tex_valid[stage] = true;
+            }
         }
         auto device=static_cast<IDirect3DDevice9*>(object);
         s_active_d3d9_device = device;

@@ -159,9 +159,9 @@ public:
         info.loaded = true;
         probeDeviceInfo();
 
-        // Enforce modern Vulkan 1.3 presentation for custom drivers (PanVK, Turnip, Mesa)
-        if (info.apiVersion < VK_API_VERSION_1_3) {
-            info.apiVersion = VK_API_VERSION_1_3;
+        // Support Vulkan 1.1 baseline for custom and system drivers
+        if (info.apiVersion < VK_API_VERSION_1_1) {
+            info.apiVersion = VK_API_VERSION_1_1;
         }
 
         LOGI("Universal GPU Driver Active: %s (API %u.%u.%u, Device: %s)",
@@ -180,7 +180,7 @@ public:
 
         VkApplicationInfo appInfo{VK_STRUCTURE_TYPE_APPLICATION_INFO};
         appInfo.pApplicationName = "NFSU2 Driver Probe";
-        appInfo.apiVersion = VK_API_VERSION_1_3;
+        appInfo.apiVersion = VK_API_VERSION_1_1;
 
         VkInstanceCreateInfo ci{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
         ci.pApplicationInfo = &appInfo;
@@ -273,7 +273,7 @@ void universal_gpu_cleanup(void) {
 
 VKAPI_ATTR VkResult VKAPI_CALL universal_vkEnumerateInstanceVersion(uint32_t *pApiVersion) {
     if (!pApiVersion) return VK_ERROR_INITIALIZATION_FAILED;
-    *pApiVersion = s_loader.info.apiVersion >= VK_API_VERSION_1_3 ? s_loader.info.apiVersion : VK_API_VERSION_1_3;
+    *pApiVersion = s_loader.info.apiVersion >= VK_API_VERSION_1_1 ? s_loader.info.apiVersion : VK_API_VERSION_1_1;
     return VK_SUCCESS;
 }
 

@@ -312,7 +312,7 @@ if glslang:
             var_name = src_path.stem
             out_h = gen_dir / f"{var_name}.h"
             subprocess.run([
-                glslang, "--quiet", "--target-env", "vulkan1.3",
+                glslang, "--quiet", "--target-env", "vulkan1.1",
                 "--vn", var_name, str(src_path), "-o", str(out_h)
             ], check=False)
 
