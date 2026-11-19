@@ -468,20 +468,8 @@ public final class GameActivity extends NativeActivity {
 
         boolean is4x3 = !widescreen || "640x480".equalsIgnoreCase(resPercent) || "800x600".equalsIgnoreCase(resPercent);
 
-        int dispW = rawW;
+        int dispW = is4x3 ? Math.min(rawW, Math.round(rawH * (4f / 3f))) : rawW;
         int dispH = rawH;
-
-        if (is4x3) {
-            dispW = Math.min(rawW, Math.round(rawH * (4f / 3f)));
-            try {
-                android.view.WindowManager.LayoutParams lp = getWindow().getAttributes();
-                lp.width = dispW;
-                lp.height = dispH;
-                lp.gravity = android.view.Gravity.CENTER;
-                getWindow().setAttributes(lp);
-                getWindow().setLayout(dispW, dispH);
-            } catch (Throwable ignored) {}
-        }
 
         int[] size = GameOptions.renderSize(this, dispW, dispH);
         if ("640x480".equalsIgnoreCase(resPercent)) {
@@ -497,6 +485,7 @@ public final class GameActivity extends NativeActivity {
             android.system.Os.setenv("NFSU2_DISPLAY_WIDTH", String.valueOf(dispW), true);
             android.system.Os.setenv("NFSU2_DISPLAY_HEIGHT", String.valueOf(dispH), true);
             android.system.Os.setenv("NFSU2_RES_PERCENT", resPercent, true);
+            android.system.Os.setenv("NFSU2_PILLARBOX_43", is4x3 ? "1" : "0", true);
         } catch (Throwable ignored) {}
         nativeResolution(size[0], size[1]);
         String displayLogs = launch.getStringExtra("displayLogs");
@@ -557,8 +546,27 @@ public final class GameActivity extends NativeActivity {
                 ViewGroup.LayoutParams.WRAP_CONTENT, false);
         statusWindow.setTouchable(false);
         touchControls = new RacingControlsView(this, this::setTouchKey, this::showTextInput,this::showTiltOptions,this::showFrameLimitOptions);
-        touchControls.setPointer(GameActivity::nativePointer);
-        touchControls.setPointerMiddle(GameActivity::nativePointerMiddle);
+        final boolean finalIs4x3 = is4x3;
+        final float fRawW = (float) rawW;
+        final float fTarget43W = (float) dispW;
+        final float fOffsetX = (fRawW - fTarget43W) * 0.5f;
+
+        touchControls.setPointer((x, y, phase) -> {
+            if (finalIs4x3 && fRawW > fTarget43W && fTarget43W > 0f) {
+                float physicalX = x * fRawW;
+                float clampedX = Math.max(fOffsetX, Math.min(physicalX, fOffsetX + fTarget43W));
+                x = (clampedX - fOffsetX) / fTarget43W;
+            }
+            GameActivity.nativePointer(x, y, phase);
+        });
+        touchControls.setPointerMiddle((x, y, phase, dx, dy) -> {
+            if (finalIs4x3 && fRawW > fTarget43W && fTarget43W > 0f) {
+                float physicalX = x * fRawW;
+                float clampedX = Math.max(fOffsetX, Math.min(physicalX, fOffsetX + fTarget43W));
+                x = (clampedX - fOffsetX) / fTarget43W;
+            }
+            GameActivity.nativePointerMiddle(x, y, phase, dx, dy);
+        });
         touchControls.setOnEditingChangeListener(editing -> {
             if (diagnosticOverlay != null) {
                 diagnosticOverlay.setSuspended(editing);
