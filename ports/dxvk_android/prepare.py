@@ -54,8 +54,10 @@ def replace(rel_path, old, new):
         return
     text = target.read_text(encoding="utf-8", errors="replace")
     if old not in text:
+        print(f"Warning: pattern not found in {rel_path}")
         return
     target.write_text(text.replace(old, new), encoding="utf-8")
+    print(f"Patched {rel_path} successfully")
 
 # 1. Forward warnings and errors to Android logcat
 replace(
@@ -84,27 +86,27 @@ replace(
 )
 replace(
     "src/d3d9/d3d9_swapchain.cpp",
-    """    dstRect.top = 0;
-    dstRect.left = 0;
-    dstRect.right = LONG(width);
-    dstRect.bottom = LONG(height);""",
-    """    const char* env_pb = std::getenv("NFSU2_PILLARBOX_43");
-    bool is_pb = env_pb && env_pb[0] == '1';
-    uint32_t bbW = m_presentParams.BackBufferWidth;
-    uint32_t bbH = m_presentParams.BackBufferHeight;
-    if (is_pb && bbW > 0 && bbH > 0 && (width * bbH > bbW * height)) {
-      uint32_t targetW = (bbW * height) / bbH;
-      uint32_t offset = (width - targetW) / 2;
-      dstRect.top = 0;
-      dstRect.left = LONG(offset);
-      dstRect.right = LONG(offset + targetW);
-      dstRect.bottom = LONG(height);
-    } else {
-      dstRect.top = 0;
-      dstRect.left = 0;
-      dstRect.right = LONG(width);
-      dstRect.bottom = LONG(height);
-    }"""
+    """      dstRect.top    = 0;
+      dstRect.left   = 0;
+      dstRect.right  = LONG(width);
+      dstRect.bottom = LONG(height);""",
+    """      const char* env_pb = std::getenv("NFSU2_PILLARBOX_43");
+      bool is_pb = env_pb && env_pb[0] == '1';
+      uint32_t bbW = m_presentParams.BackBufferWidth;
+      uint32_t bbH = m_presentParams.BackBufferHeight;
+      if (is_pb && bbW > 0 && bbH > 0 && (width * bbH > bbW * height)) {
+        uint32_t targetW = (bbW * height) / bbH;
+        uint32_t offset = (width - targetW) / 2;
+        dstRect.top    = 0;
+        dstRect.left   = LONG(offset);
+        dstRect.right  = LONG(offset + targetW);
+        dstRect.bottom = LONG(height);
+      } else {
+        dstRect.top    = 0;
+        dstRect.left   = 0;
+        dstRect.right  = LONG(width);
+        dstRect.bottom = LONG(height);
+      }"""
 )
 
 # Zero-overhead Enhanced Contrast GPU post-processing in presenter swapchain

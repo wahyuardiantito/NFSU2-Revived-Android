@@ -44,18 +44,27 @@ std::atomic<PFN_vkGetInstanceProcAddr> instanceProcAddr{nullptr};
 static void computeTargetBufferSize(ANativeWindow* win, uint32_t reqW, uint32_t reqH, uint32_t& outW, uint32_t& outH) {
     outW = reqW;
     outH = reqH;
-    if (!win || reqH == 0) return;
-
-    uint32_t sW = screenWidth;
-    uint32_t sH = screenHeight;
-    if (sW == 0 && win) sW = (uint32_t)ANativeWindow_getWidth(win);
-    if (sH == 0 && win) sH = (uint32_t)ANativeWindow_getHeight(win);
+    if (reqH == 0) return;
 
     const char* env_pb = getenv("NFSU2_PILLARBOX_43");
-    if (env_pb && env_pb[0] == '1' && sW > 0 && sH > 0) {
-        outH = reqH;
-        outW = (uint32_t(reqH) * sW + (sH / 2)) / sH;
-        outW &= ~1u;
+    if (env_pb && env_pb[0] == '1') {
+        uint32_t sW = 0, sH = 0;
+        const char* pw = getenv("NFSU2_PHYSICAL_WIDTH");
+        const char* ph = getenv("NFSU2_PHYSICAL_HEIGHT");
+        if (pw && ph) {
+            sW = (uint32_t)atoi(pw);
+            sH = (uint32_t)atoi(ph);
+        }
+        if (sW == 0 && win) sW = (uint32_t)ANativeWindow_getWidth(win);
+        if (sH == 0 && win) sH = (uint32_t)ANativeWindow_getHeight(win);
+        if (sW == 0) sW = screenWidth;
+        if (sH == 0) sH = screenHeight;
+
+        if (sW > 0 && sH > 0) {
+            outH = reqH;
+            outW = (uint32_t(reqH) * sW + (sH / 2)) / sH;
+            outW &= ~1u;
+        }
     }
 }
 #endif

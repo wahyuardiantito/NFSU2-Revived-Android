@@ -482,6 +482,8 @@ public final class GameActivity extends NativeActivity {
             resPercent = String.valueOf(pct);
         }
         try {
+            android.system.Os.setenv("NFSU2_PHYSICAL_WIDTH", String.valueOf(rawW), true);
+            android.system.Os.setenv("NFSU2_PHYSICAL_HEIGHT", String.valueOf(rawH), true);
             android.system.Os.setenv("NFSU2_DISPLAY_WIDTH", String.valueOf(dispW), true);
             android.system.Os.setenv("NFSU2_DISPLAY_HEIGHT", String.valueOf(dispH), true);
             android.system.Os.setenv("NFSU2_RES_PERCENT", resPercent, true);
