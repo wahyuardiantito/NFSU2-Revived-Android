@@ -14,7 +14,6 @@ struct ANativeWindow {Display* display;Window window;uint32_t width,height;};
 #include <atomic>
 #include <algorithm>
 #include <cstdint>
-#include <cstdlib>
 #include "src/dxvk/dxvk_presenter.h"
 #include "src/wsi/wsi_window.h"
 #include "src/wsi/wsi_monitor.h"
@@ -39,35 +38,6 @@ HMONITOR monitor(){return reinterpret_cast<HMONITOR>(uintptr_t{1});}
 // The Vulkan driver DXVK talks to: the linked system loader, or an imported
 // adrenotools driver chosen in the launcher (set before the device exists).
 std::atomic<PFN_vkGetInstanceProcAddr> instanceProcAddr{nullptr};
-
-#ifdef __ANDROID__
-static void computeTargetBufferSize(ANativeWindow* win, uint32_t reqW, uint32_t reqH, uint32_t& outW, uint32_t& outH) {
-    outW = reqW;
-    outH = reqH;
-    if (reqH == 0) return;
-
-    const char* env_pb = getenv("NFSU2_PILLARBOX_43");
-    if (env_pb && env_pb[0] == '1') {
-        uint32_t sW = 0, sH = 0;
-        const char* pw = getenv("NFSU2_PHYSICAL_WIDTH");
-        const char* ph = getenv("NFSU2_PHYSICAL_HEIGHT");
-        if (pw && ph) {
-            sW = (uint32_t)atoi(pw);
-            sH = (uint32_t)atoi(ph);
-        }
-        if (sW == 0 && win) sW = (uint32_t)ANativeWindow_getWidth(win);
-        if (sH == 0 && win) sH = (uint32_t)ANativeWindow_getHeight(win);
-        if (sW == 0) sW = screenWidth;
-        if (sH == 0) sH = screenHeight;
-
-        if (sW > 0 && sH > 0) {
-            outH = reqH;
-            outW = (uint32_t(reqH) * sW + (sH / 2)) / sH;
-            outW &= ~1u;
-        }
-    }
-}
-#endif
 }
 #define DXVK_EXPORT __attribute__((visibility("default")))
 
@@ -77,11 +47,8 @@ extern "C" DXVK_EXPORT PFN_vkGetInstanceProcAddr dxvkAndroidGetInstanceProcAddr(
 }
 extern "C" DXVK_EXPORT void dxvkAndroidSetRenderSize(uint32_t width,uint32_t height){std::lock_guard<std::mutex> guard(windowMutex);renderWidth=width;renderHeight=height;
 #ifdef __ANDROID__
-    if(currentWindow&&width&&height){
-        uint32_t bufW = width, bufH = height;
-        computeTargetBufferSize(currentWindow, width, height, bufW, bufH);
-        if(ANativeWindow_setBuffersGeometry(currentWindow,bufW,bufH,0)==0){bufferWidth=bufW;bufferHeight=bufH;}
-    }
+    if(currentWindow&&width&&height&&
+       ANativeWindow_setBuffersGeometry(currentWindow,width,height,0)==0){bufferWidth=width;bufferHeight=height;}
 #endif
 }
 extern "C" DXVK_EXPORT HWND dxvkAndroidGetWindowHandle(){std::lock_guard<std::mutex> guard(windowMutex);return currentHandle;}
@@ -97,11 +64,8 @@ extern "C" DXVK_EXPORT void dxvkAndroidSetWindow(ANativeWindow* window){
     // Below native resolution, present at the render size and let the Android
     // compositor scale the surface: the swap chain blit no longer writes a
     // full-screen image every frame.
-    if(window&&renderWidth&&renderHeight){
-        uint32_t bufW = renderWidth, bufH = renderHeight;
-        computeTargetBufferSize(window, renderWidth, renderHeight, bufW, bufH);
-        if(ANativeWindow_setBuffersGeometry(window,bufW,bufH,0)==0){bufferWidth=bufW;bufferHeight=bufH;}
-    }
+    if(window&&renderWidth&&renderHeight&&
+       ANativeWindow_setBuffersGeometry(window,renderWidth,renderHeight,0)==0){bufferWidth=renderWidth;bufferHeight=renderHeight;}
     currentHandle=window?reinterpret_cast<HWND>(uintptr_t{0x1000}):nullptr;
 #else
     currentHandle=window;
@@ -190,12 +154,8 @@ void resizeWindow(HWND window,DxvkWindowState*,uint32_t width,uint32_t height){
 #ifdef __ANDROID__
     uint32_t targetW = renderWidth ? renderWidth : width;
     uint32_t targetH = renderHeight ? renderHeight : height;
-    if(currentWindow&&window){
-        uint32_t bufW = targetW, bufH = targetH;
-        computeTargetBufferSize(currentWindow, targetW, targetH, bufW, bufH);
-        if(ANativeWindow_setBuffersGeometry(currentWindow,bufW,bufH,0)==0){
-            bufferWidth=bufW;bufferHeight=bufH;
-        }
+    if(currentWindow&&window&&ANativeWindow_setBuffersGeometry(currentWindow,targetW,targetH,0)==0){
+        bufferWidth=targetW;bufferHeight=targetH;
     }
 #else
     (void)window;(void)width;(void)height;

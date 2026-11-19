@@ -16,6 +16,11 @@ import android.os.Bundle;
 import android.view.Gravity;
 import android.view.ViewGroup;
 import android.widget.PopupWindow;
+import android.app.Dialog;
+import android.view.Window;
+import android.view.WindowManager;
+import android.view.View;
+import android.graphics.drawable.ColorDrawable;
 import android.graphics.Color;
 import android.widget.LinearLayout;
 import android.widget.EditText;
@@ -106,7 +111,7 @@ public final class GameActivity extends NativeActivity {
             GameLog.w("Audio", "Could not request audio focus: " + t.getMessage());
         }
     }
-    private PopupWindow controlsWindow;
+    private Dialog controlsDialog;
     private DiagnosticOverlay diagnosticOverlay;
     private RacingControlsView touchControls;
     private boolean statusHidden;
@@ -471,6 +476,17 @@ public final class GameActivity extends NativeActivity {
         int dispW = is4x3 ? Math.min(rawW, Math.round(rawH * (4f / 3f))) : rawW;
         int dispH = rawH;
 
+        if (is4x3) {
+            try {
+                android.view.WindowManager.LayoutParams lp = getWindow().getAttributes();
+                lp.width = dispW;
+                lp.height = dispH;
+                lp.gravity = android.view.Gravity.CENTER;
+                getWindow().setAttributes(lp);
+                getWindow().setLayout(dispW, dispH);
+            } catch (Throwable ignored) {}
+        }
+
         int[] size = GameOptions.renderSize(this, dispW, dispH);
         if ("640x480".equalsIgnoreCase(resPercent)) {
             size = new int[] {640, 480};
@@ -574,15 +590,46 @@ public final class GameActivity extends NativeActivity {
                 diagnosticOverlay.setSuspended(editing);
             }
         });
-        controlsWindow = new PopupWindow(touchControls, ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT, false);
-        controlsWindow.setClippingEnabled(false);
-        controlsWindow.setFocusable(false);
-        controlsWindow.setTouchable(true);
-        controlsWindow.setInputMethodMode(PopupWindow.INPUT_METHOD_NOT_NEEDED);
-        if (Build.VERSION.SDK_INT >= 22) {
-            controlsWindow.setAttachedInDecor(true);
+        controlsDialog = new Dialog(this, android.R.style.Theme_NoTitleBar_Fullscreen);
+        controlsDialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        controlsDialog.setContentView(touchControls, new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        Window dw = controlsDialog.getWindow();
+        if (dw != null) {
+            dw.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            dw.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+            dw.addFlags(
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE |
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL |
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN |
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+            );
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                WindowManager.LayoutParams wmlp = dw.getAttributes();
+                wmlp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+                dw.setAttributes(wmlp);
+            }
+            dw.setLayout(rawW, rawH);
         }
+        controlsDialog.setCancelable(false);
+        controlsDialog.setCanceledOnTouchOutside(false);
+        controlsDialog.setOnShowListener(d -> {
+            Window w = controlsDialog.getWindow();
+            if (w != null) {
+                w.setLayout(rawW, rawH);
+                View decor = w.getDecorView();
+                if (decor != null) {
+                    decor.setSystemUiVisibility(
+                        View.SYSTEM_UI_FLAG_FULLSCREEN |
+                        View.SYSTEM_UI_FLAG_HIDE_NAVIGATION |
+                        View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY |
+                        View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN |
+                        View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION |
+                        View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                    );
+                }
+            }
+        });
         java.util.ArrayList<String> cheats = launch.getStringArrayListExtra("cheats");
         if (cheats == null) cheats = GameOptions.getActiveCheatCodes(this);
         if (!cheats.isEmpty()) applyCheatCodes(cheats);
@@ -743,8 +790,10 @@ public final class GameActivity extends NativeActivity {
         if (focused && foreground && statusWindow != null && !statusHidden && !statusWindow.isShowing()) {
             statusWindow.showAtLocation(getWindow().getDecorView(), Gravity.TOP | Gravity.START, 0, 0);
         }
-        if (focused && foreground && controlsWindow != null && !controlsWindow.isShowing()) {
-            controlsWindow.showAtLocation(getWindow().getDecorView(), Gravity.TOP | Gravity.START, 0, 0);
+        if (focused && foreground && controlsDialog != null && !controlsDialog.isShowing()) {
+            try {
+                controlsDialog.show();
+            } catch (Throwable ignored) {}
         }
         if (focused && foreground && diagnosticOverlay != null) {
             diagnosticOverlay.show();
@@ -770,7 +819,11 @@ public final class GameActivity extends NativeActivity {
         if(inputManager!=null)inputManager.unregisterInputDeviceListener(gamepadListener);
         if (statusWindow != null) statusWindow.dismiss();
         if (touchControls != null) {touchControls.removeCallbacks(updateControlMode);touchControls.releaseAll();}
-        if (controlsWindow != null) controlsWindow.dismiss();
+        if (controlsDialog != null && controlsDialog.isShowing()) {
+            try {
+                controlsDialog.dismiss();
+            } catch (Throwable ignored) {}
+        }
         super.onPause();
     }
     @Override protected void onResume() {
@@ -819,9 +872,9 @@ public final class GameActivity extends NativeActivity {
                 .setNeutralButton("Try Resume", (dialog, which) -> {
                     wasBackgrounded = false;
                     dialog.dismiss();
-                    if (controlsWindow != null && !controlsWindow.isShowing() && hasWindowFocus()) {
+                    if (controlsDialog != null && !controlsDialog.isShowing() && hasWindowFocus()) {
                         try {
-                            controlsWindow.showAtLocation(getWindow().getDecorView(), Gravity.TOP | Gravity.START, 0, 0);
+                            controlsDialog.show();
                         } catch (Exception ignored) {}
                     }
                     if (diagnosticOverlay != null) {
@@ -972,6 +1025,12 @@ public final class GameActivity extends NativeActivity {
         if (s_instance == this) {
             s_instance = null;
         }
+        if (controlsDialog != null && controlsDialog.isShowing()) {
+            try {
+                controlsDialog.dismiss();
+            } catch (Throwable ignored) {}
+        }
+        controlsDialog = null;
         super.onDestroy();
         stopCompanionTicker();
         if (diagnosticOverlay != null) diagnosticOverlay.stop();
