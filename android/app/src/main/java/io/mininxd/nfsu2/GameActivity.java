@@ -459,15 +459,37 @@ public final class GameActivity extends NativeActivity {
         }
         // Launcher options travel as extras; a direct start (adb, recents) falls back to the saved ones.
         DisplayMetrics metrics = new DisplayMetrics(); getWindowManager().getDefaultDisplay().getRealMetrics(metrics);
-        int dispW = Math.max(metrics.widthPixels, metrics.heightPixels);
-        int dispH = Math.min(metrics.widthPixels, metrics.heightPixels);
-        int[] size = GameOptions.renderSize(this, dispW, dispH);
+        int rawW = Math.max(metrics.widthPixels, metrics.heightPixels);
+        int rawH = Math.min(metrics.widthPixels, metrics.heightPixels);
+
+        boolean widescreen = launch.getBooleanExtra("widescreen", GameOptions.usesWidescreenPatch(this));
         String resPercent = launch.getStringExtra("resolutionPercent");
         if (resPercent == null) resPercent = GameOptions.get(this, GameOptions.RESOLUTION);
+
+        boolean is4x3 = !widescreen || "640x480".equalsIgnoreCase(resPercent) || "800x600".equalsIgnoreCase(resPercent);
+
+        int dispW = rawW;
+        int dispH = rawH;
+
+        if (is4x3) {
+            dispW = Math.min(rawW, Math.round(rawH * (4f / 3f)));
+            try {
+                android.view.WindowManager.LayoutParams lp = getWindow().getAttributes();
+                lp.width = dispW;
+                lp.height = dispH;
+                lp.gravity = android.view.Gravity.CENTER;
+                getWindow().setAttributes(lp);
+                getWindow().setLayout(dispW, dispH);
+            } catch (Throwable ignored) {}
+        }
+
+        int[] size = GameOptions.renderSize(this, dispW, dispH);
         if ("640x480".equalsIgnoreCase(resPercent)) {
+            size = new int[] {640, 480};
             int pct = (640 * 100 + (dispW / 2)) / dispW;
             resPercent = String.valueOf(pct);
         } else if ("800x600".equalsIgnoreCase(resPercent)) {
+            size = new int[] {800, 600};
             int pct = (800 * 100 + (dispW / 2)) / dispW;
             resPercent = String.valueOf(pct);
         }
@@ -476,7 +498,7 @@ public final class GameActivity extends NativeActivity {
             android.system.Os.setenv("NFSU2_DISPLAY_HEIGHT", String.valueOf(dispH), true);
             android.system.Os.setenv("NFSU2_RES_PERCENT", resPercent, true);
         } catch (Throwable ignored) {}
-        nativeResolution(launch.getIntExtra("renderWidth", size[0]), launch.getIntExtra("renderHeight", size[1]));
+        nativeResolution(size[0], size[1]);
         String displayLogs = launch.getStringExtra("displayLogs");
         if (displayLogs == null) displayLogs = GameOptions.get(this, GameOptions.DISPLAY_LOGS);
         GameOptions.applyWidescreenPatchFile(this);
@@ -495,9 +517,8 @@ public final class GameActivity extends NativeActivity {
         nativeLanguage(language);
         nativeFrameLimit(launch.getIntExtra("frameCap", Integer.parseInt(GameOptions.get(this, GameOptions.FPS))));
         int screenMode = launch.getIntExtra("widescreenMode", GameOptions.widescreenMode(this));
-        boolean widescreen = launch.getBooleanExtra("widescreen", GameOptions.usesWidescreenPatch(this));
-        nativeWidescreen(widescreen);
-        nativeScreenMode(screenMode);       // 0=Widescreen HUD edges, 2=4:3 HUD centre
+        nativeWidescreen(widescreen && !is4x3);
+        nativeScreenMode(is4x3 ? 2 : screenMode);       // 0=Widescreen HUD edges, 2=4:3 HUD centre
         nativeDrawDistance(distVal);
         nativeForwardCulling(true);
         String server = launch.getStringExtra("onlineServer");

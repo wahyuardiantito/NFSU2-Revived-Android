@@ -1067,8 +1067,14 @@ public final class LauncherActivity extends Activity {
                 android.os.Process.killProcess(process.pid);
         DisplayMetrics metrics = new DisplayMetrics();
         getWindowManager().getDefaultDisplay().getRealMetrics(metrics);
-        int[] size = GameOptions.renderSize(this, Math.max(metrics.widthPixels, metrics.heightPixels),
-                Math.min(metrics.widthPixels, metrics.heightPixels));
+        int rawW = Math.max(metrics.widthPixels, metrics.heightPixels);
+        int rawH = Math.min(metrics.widthPixels, metrics.heightPixels);
+        boolean ws = "on".equals(GameOptions.get(this, GameOptions.WIDESCREEN));
+        String res = GameOptions.get(this, GameOptions.RESOLUTION);
+        boolean is4x3 = !ws || "640x480".equalsIgnoreCase(res) || "800x600".equalsIgnoreCase(res);
+        int dispW = is4x3 ? Math.min(rawW, Math.round(rawH * (4f / 3f))) : rawW;
+        int dispH = rawH;
+        int[] size = GameOptions.renderSize(this, dispW, dispH);
         String[] loader = GpuDrivers.loaderArguments(this);
         ensureScriptsInstalled(gameRoot());
         GameOptions.applyWidescreenPatchFile(this);

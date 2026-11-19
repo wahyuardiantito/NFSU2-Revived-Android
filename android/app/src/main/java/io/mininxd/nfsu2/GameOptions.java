@@ -46,9 +46,9 @@ public final class GameOptions {
             new Option(DISPLAY_LOGS, "Display Logs", "off",
                     new String[] {"off", "compact", "full"},
                     new String[] {"Off", "Compact", "Full"}),
-            new Option(WIDESCREEN, "Widescreen HUD", "on",
-                    new String[] {"on", "off"},
-                    new String[] {"Edge (Pinggir Layar)", "Centered (Aman Notch/Sudut Layar)"}),
+            new Option(WIDESCREEN, "Aspect Ratio / Widescreen", "off",
+                    new String[] {"off", "on"},
+                    new String[] {"4:3 Original (Pillarbox - Tidak Melar)", "Widescreen (Layar Penuh)"}),
             new Option(MINIMAP, "Minimap", "top",
                     new String[] {"top", "bottom"},
                     new String[] {"Top left", "Bottom left (original)"}),
@@ -585,7 +585,7 @@ public final class GameOptions {
             else if ("175".equals(menuSize)) feScale = "1.75";
             else if ("200".equals(menuSize)) feScale = "2.00";
 
-            String aspect = "Auto";
+            String aspect = usesWidescreenPatch(context) ? "Auto" : "4:3";
             String skipIntro = "0";
             String cutsceneBorders = "0";
 
