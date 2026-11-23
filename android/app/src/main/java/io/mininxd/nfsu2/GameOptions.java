@@ -31,12 +31,12 @@ public final class GameOptions {
             TRACKSIDE_CROWDS = "trackside_crowds", REGION = "region", SPEEDOMETER = "speedometer", PAD_LAYOUT = "pad_layout";
 
     static final Option[] ALL = {
-            new Option(GRAPHICS_BACKEND, "Graphics API", "auto",
-                    new String[] {"auto", "vulkan", "opengl"},
-                    new String[] {"Auto", "Vulkan (DXVK)", "OpenGL (ES)"}),
-            new Option(RESOLUTION, "Internal Resolution", "35",
-                    new String[] {"30", "35", "40", "45", "50", "55", "60", "65", "70", "75", "80", "85", "90", "95", "100", "125", "150", "200", "640x480", "800x600"},
-                    new String[] {"30% (~720x324 - Super Ringan 60 FPS)", "35% (~840x378 - Seimbang 60 FPS)", "40% (~960x432 - Tajam Ringan)", "45%", "50%", "55%", "60%", "65% (Default)", "70%", "75%", "80%", "85%", "90%", "95%", "100%", "125%", "150%", "200%", "640x480 (Kotak 4:3)", "800x600 (Kotak 4:3)"}),
+            new Option(GRAPHICS_BACKEND, "Graphics API", "vulkan",
+                    new String[] {"vulkan", "auto", "opengl"},
+                    new String[] {"Vulkan (DXVK - 60 FPS)", "Auto", "OpenGL (ES)"}),
+            new Option(RESOLUTION, "Internal Resolution", "640x480",
+                    new String[] {"640x480", "800x600"},
+                    new String[] {"640x480 (Original 4:3 - 60 FPS)", "800x600 (Original 4:3 - 60 FPS)"}),
             new Option(DRAW_DISTANCE, "Draw Distance", "performance",
                     new String[] {"ultra_performance", "performance", "balanced", "extended", "original"},
                     new String[] {"Ultra Performance", "Performance", "Balanced", "Extended", "Original"}),
@@ -341,21 +341,13 @@ public final class GameOptions {
         return lang;
     }
 
-    /** Render size for the selected resolution on a display of width × height (landscape). */
+    /** Render size for the selected resolution: only 640x480 and 800x600 original NFSU2 resolutions. */
     static int[] renderSize(Context context, int width, int height) {
         String value = get(context, RESOLUTION);
-        if ("640x480".equalsIgnoreCase(value) || "original".equalsIgnoreCase(value)) {
-            return new int[] {640, 480};
-        }
         if ("800x600".equalsIgnoreCase(value)) {
             return new int[] {800, 600};
         }
-        try {
-            float scale = Integer.parseInt(value) / 100f;
-            return new int[] {Math.round(width * scale / 2f) * 2, Math.round(height * scale / 2f) * 2};
-        } catch (Exception e) {
-            return new int[] {640, 480};
-        }
+        return new int[] {640, 480};
     }
 
     /**

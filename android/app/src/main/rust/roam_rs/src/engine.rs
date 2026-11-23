@@ -208,6 +208,14 @@ pub unsafe extern "C" fn nfs_rust_apply_engine_pacing(mem_base: *mut u8, real_el
         write_u32(mem_base, G_HEADLIGHT_ENABLE_ADDR, 1);
     }
 
+    // Clamp g_CarEnvironmentMapEnable (0x00870CBC) to 1 (high quality metallic paint, zero 6-pass cubemap)
+    if read_u32(mem_base, 0x00870CBC) > 1 {
+        write_u32(mem_base, 0x00870CBC, 1);
+    }
+
+    // Suppress g_MotionBlurEnable (0x00870CDC = 0) to prevent TBDR backbuffer resolve stalls
+    write_u32(mem_base, 0x00870CDC, 0);
+
     // 7. Trackside Crowd Suppression (0x00870CD0 = g_CrowdEnable)
     crate::crowd::nfs_rust_apply_crowd_suppression(mem_base);
 

@@ -264,6 +264,16 @@ void nfs_widescreen_apply_frame_rate(void) {
         MEM32(0x00870CC4u) = 1;
     }
 
+    /* Clamp g_CarEnvironmentMapEnable (0x00870CBC) to 1 (High metallic paint reflections, zero dynamic cubemap overhead) */
+    if (MEM32(0x00870CBCu) > 1) {
+        MEM32(0x00870CBCu) = 1;
+    }
+
+    /* Suppress g_MotionBlurEnable (0x00870CDC = 0) to eliminate framebuffer accumulation stalls on Mali TBDR */
+    if (MEM32(0x00870CDCu) != 0) {
+        MEM32(0x00870CDCu) = 0;
+    }
+
     /* Suppress trackside spectator crowds (0x00870CD0 = g_CrowdEnable) on mobile to eliminate draw call and alpha-test spikes */
     static int s_crowd_checked = 0;
     static int s_crowd_allowed = 0;

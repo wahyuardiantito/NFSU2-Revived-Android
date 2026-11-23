@@ -498,6 +498,10 @@ void regQueryValueExA(){
         uint32_t val=*reinterpret_cast<const uint32_t*>(value->second.bytes.data());
         if(val>1){val=1;std::memcpy(const_cast<uint8_t*>(value->second.bytes.data()),&val,4);}
     }
+    if(name=="g_carenvironmentmapenable"&&value->second.bytes.size()>=4){
+        uint32_t val=*reinterpret_cast<const uint32_t*>(value->second.bytes.data());
+        if(val>1){val=1;std::memcpy(const_cast<uint8_t*>(value->second.bytes.data()),&val,4);}
+    }
     if(name=="g_crowdenable"&&value->second.bytes.size()>=4){
         const char* envCrowd=std::getenv("NFSU2_CROWD");
         bool allowCrowd=(envCrowd&&(std::strcmp(envCrowd,"1")==0||strcasecmp(envCrowd,"on")==0));
@@ -505,7 +509,7 @@ void regQueryValueExA(){
             uint32_t val=0;std::memcpy(const_cast<uint8_t*>(value->second.bytes.data()),&val,4);
         }
     }
-    if((name=="g_overbrightenable"||name=="g_motionblurenable"||name=="g_depthoffieldenable")&&value->second.bytes.size()>=4){
+    if((name=="g_overbrightenable"||name=="g_motionblurenable"||name=="g_depthoffieldenable"||name=="g_vsyncon"||name=="g_rainenable")&&value->second.bytes.size()>=4){
         uint32_t val=0;std::memcpy(const_cast<uint8_t*>(value->second.bytes.data()),&val,4);
     }
     if(!arg(5)){ret(87,6);return;}uint32_t size=read32(arg(5));write32(arg(5),value->second.bytes.size());
@@ -522,6 +526,10 @@ void regSetValueExA(){
         uint32_t val=*reinterpret_cast<const uint32_t*>(value.bytes.data());
         if(val>1){val=1;std::memcpy(value.bytes.data(),&val,4);}
     }
+    if(name=="g_carenvironmentmapenable"&&value.bytes.size()>=4){
+        uint32_t val=*reinterpret_cast<const uint32_t*>(value.bytes.data());
+        if(val>1){val=1;std::memcpy(value.bytes.data(),&val,4);}
+    }
     if(name=="g_crowdenable"&&value.bytes.size()>=4){
         const char* envCrowd=std::getenv("NFSU2_CROWD");
         bool allowCrowd=(envCrowd&&(std::strcmp(envCrowd,"1")==0||strcasecmp(envCrowd,"on")==0));
@@ -529,7 +537,7 @@ void regSetValueExA(){
             uint32_t val=0;std::memcpy(value.bytes.data(),&val,4);
         }
     }
-    if((name=="g_overbrightenable"||name=="g_motionblurenable"||name=="g_depthoffieldenable")&&value.bytes.size()>=4){
+    if((name=="g_overbrightenable"||name=="g_motionblurenable"||name=="g_depthoffieldenable"||name=="g_vsyncon"||name=="g_rainenable")&&value.bytes.size()>=4){
         uint32_t val=0;std::memcpy(value.bytes.data(),&val,4);
     }
     gameRegistry[name]=std::move(value);
