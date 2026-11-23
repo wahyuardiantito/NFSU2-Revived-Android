@@ -130,16 +130,15 @@ int nfs_bind_to_perf_cores(void) {
                     }
                     fclose(fc);
                 }
-                int is_critical = (strstr(comm, "NFSU2") != NULL ||
+                // Explicitly isolate only real high-load graphics & game execution threads to big cores (Cortex-A76).
+                // All background, audio, compiler, JVM, network, and helper worker threads are bound strictly to little_set (Cortex-A55).
+                int is_critical = (strcmp(comm, "RenderThread") == 0 ||
+                                   strcmp(comm, "main") == 0 ||
                                    strstr(comm, "MainRender") != NULL ||
                                    strstr(comm, "GuestBoot") != NULL ||
-                                   strstr(comm, "RenderThread") != NULL ||
-                                   strcmp(comm, "main") == 0 ||
-                                   strstr(comm, "dxvk") != NULL ||
-                                   strstr(comm, "mininxd") != NULL ||
-                                   strstr(comm, "nfsu2") != NULL ||
-                                   comm[0] == '\0');
-                sched_setaffinity(tid, sizeof(cpu_set_t), is_critical ? &cpuset : &all_set);
+                                   strcmp(comm, "dxvk-submit") == 0 ||
+                                   strcmp(comm, "dxvk-cs") == 0);
+                sched_setaffinity(tid, sizeof(cpu_set_t), is_critical ? &cpuset : &little_set);
             }
         }
         closedir(d);

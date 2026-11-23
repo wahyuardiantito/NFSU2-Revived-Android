@@ -439,13 +439,18 @@ void registryOpen(uint32_t output,uint32_t argc){
             const uint8_t* p=reinterpret_cast<const uint8_t*>(&val);
             gameRegistry.emplace("g_worldlodlevel",RegistryValue{4,{p,p+4}});
         }
+        if(gameRegistry.find("g_carlodlevel")==gameRegistry.end()){
+            uint32_t val=1;
+            const uint8_t* p=reinterpret_cast<const uint8_t*>(&val);
+            gameRegistry.emplace("g_carlodlevel",RegistryValue{4,{p,p+4}});
+        }
         if(gameRegistry.find("g_roadreflectionenable")==gameRegistry.end()){
-            uint32_t val=0;
+            uint32_t val=1;
             const uint8_t* p=reinterpret_cast<const uint8_t*>(&val);
             gameRegistry.emplace("g_roadreflectionenable",RegistryValue{4,{p,p+4}});
         }
         if(gameRegistry.find("g_carenvironmentmapenable")==gameRegistry.end()){
-            uint32_t val=0;
+            uint32_t val=1;
             const uint8_t* p=reinterpret_cast<const uint8_t*>(&val);
             gameRegistry.emplace("g_carenvironmentmapenable",RegistryValue{4,{p,p+4}});
         }
@@ -500,7 +505,7 @@ void regQueryValueExA(){
             uint32_t val=0;std::memcpy(const_cast<uint8_t*>(value->second.bytes.data()),&val,4);
         }
     }
-    if(name=="g_overbrightenable"&&value->second.bytes.size()>=4){
+    if((name=="g_overbrightenable"||name=="g_motionblurenable"||name=="g_depthoffieldenable")&&value->second.bytes.size()>=4){
         uint32_t val=0;std::memcpy(const_cast<uint8_t*>(value->second.bytes.data()),&val,4);
     }
     if(!arg(5)){ret(87,6);return;}uint32_t size=read32(arg(5));write32(arg(5),value->second.bytes.size());
@@ -523,6 +528,9 @@ void regSetValueExA(){
         if(!allowCrowd){
             uint32_t val=0;std::memcpy(value.bytes.data(),&val,4);
         }
+    }
+    if((name=="g_overbrightenable"||name=="g_motionblurenable"||name=="g_depthoffieldenable")&&value.bytes.size()>=4){
+        uint32_t val=0;std::memcpy(value.bytes.data(),&val,4);
     }
     gameRegistry[name]=std::move(value);
     if(registryPersisted(name))savePersistedRegistry();

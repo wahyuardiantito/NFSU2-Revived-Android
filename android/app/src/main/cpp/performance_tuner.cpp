@@ -62,8 +62,9 @@ void initTopology() {
     }
 
     if (max_seen_freq > 0) {
-        // Group cores with frequency >= 75% of maximum frequency into the performance cluster
-        unsigned long threshold = (max_seen_freq * 3) / 4;
+        // Group cores with frequency >= 93% of maximum frequency into the performance cluster
+        // (avoids 2.0 GHz Cortex-A55 being misclassified as big cores on 2.2 GHz Helio G100)
+        unsigned long threshold = (max_seen_freq * 93) / 100;
         for (const auto& [core_id, freq] : core_freqs) {
             if (freq >= threshold) {
                 CPU_SET(core_id, &s_perf_mask);
@@ -71,6 +72,12 @@ void initTopology() {
             } else {
                 CPU_SET(core_id, &s_little_mask);
             }
+        }
+        if (s_perf_cores_count == s_total_cores) {
+            // All cores passed frequency threshold (uniform/near-uniform clocks); reset to allow /proc/cpuinfo architecture check
+            CPU_ZERO(&s_perf_mask);
+            CPU_ZERO(&s_little_mask);
+            s_perf_cores_count = 0;
         }
     }
 
@@ -131,17 +138,24 @@ void tuneThread(ThreadRole role, const char* name) {
 
     switch (role) {
         case ThreadRole::RENDER_MAIN: {
-            // High priority nice value for UI/render loop; leave core affinity to Linux EAS
-            // to dynamically utilize Cortex-X3 prime cores without throttling.
             setpriority(PRIO_PROCESS, 0, -10);
+            if (s_perf_cores_count > 0) {
+                sched_setaffinity(0, sizeof(cpu_set_t), &s_perf_mask);
+            }
             break;
         }
         case ThreadRole::GUEST_AUDIO: {
             setpriority(PRIO_PROCESS, 0, -5);
+            if (s_perf_cores_count > 0 && s_perf_cores_count < s_total_cores) {
+                sched_setaffinity(0, sizeof(cpu_set_t), &s_little_mask);
+            }
             break;
         }
         case ThreadRole::BACKGROUND_WORKER: {
             setpriority(PRIO_PROCESS, 0, 0);
+            if (s_perf_cores_count > 0 && s_perf_cores_count < s_total_cores) {
+                sched_setaffinity(0, sizeof(cpu_set_t), &s_little_mask);
+            }
             break;
         }
     }

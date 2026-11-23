@@ -44,8 +44,8 @@ pub struct DxvkProfileConfig {
 impl Default for DxvkProfileConfig {
     fn default() -> Self {
         Self {
-            max_device_memory_mb: 4096,
-            max_shared_memory_mb: 2048,
+            max_device_memory_mb: 2048,
+            max_shared_memory_mb: 1024,
             general_hazards: false,
             invariant_position: true,
             force_sampler_spec_constants: true,
@@ -55,19 +55,19 @@ impl Default for DxvkProfileConfig {
             allow_do_not_wait: true,
             cached_dynamic_buffers: true,
             cached_write_only_buffers: true,
-            device_local_constant_buffers: true,
+            device_local_constant_buffers: false,
             tiler_mode: true,
-            enable_gpl: true,
-            enable_descriptor_buffer: true,
-            enable_descriptor_heap: true,
+            enable_gpl: false,
+            enable_descriptor_buffer: false,
+            enable_descriptor_heap: false,
             use_fp16: true,
             enable_unified_image_layouts: true,
             track_pipeline_lifetime: false,
             evict_managed_on_unlock: true,
             defer_surface_creation: true,
             no_explicit_front_buffer: true,
-            tear_free: true,
-            max_frame_latency: 2,
+            tear_free: false,
+            max_frame_latency: 1,
             num_compiler_threads: 2,
         }
     }
@@ -79,30 +79,30 @@ impl DxvkProfileConfig {
         let mut s = String::with_capacity(2048);
         s.push_str("dxvk.enableStateCache = True\n");
         s.push_str("dxvk.enableAsync = True\n");
-        s.push_str("dxvk.gplAsyncCache = True\n");
+        s.push_str("dxvk.gplAsyncCache = False\n");
         s.push_str(&format!("dxvk.numCompilerThreads = {}\n", self.num_compiler_threads));
-        s.push_str("dxvk.useRawSsbo = Auto\n");
-        s.push_str("dxvk.tilerMode = True\n");
-        s.push_str("dxvk.enableGraphicsPipelineLibrary = True\n");
-        s.push_str("dxvk.enableDescriptorBuffer = Auto\n");
-        s.push_str("dxvk.enableDescriptorHeap = Auto\n");
+        s.push_str("dxvk.useRawSsbo = False\n");
+        s.push_str(&format!("dxvk.tilerMode = {}\n", if self.tiler_mode { "True" } else { "False" }));
+        s.push_str(&format!("dxvk.enableGraphicsPipelineLibrary = {}\n", if self.enable_gpl { "True" } else { "False" }));
+        s.push_str(&format!("dxvk.enableDescriptorBuffer = {}\n", if self.enable_descriptor_buffer { "True" } else { "False" }));
+        s.push_str(&format!("dxvk.enableDescriptorHeap = {}\n", if self.enable_descriptor_heap { "True" } else { "False" }));
         s.push_str("dxvk.enableUnifiedImageLayouts = True\n");
         s.push_str("dxvk.enableImplicitResolves = False\n");
         s.push_str("dxvk.enableMemoryDefrag = False\n");
-        s.push_str("dxvk.trackPipelineLifetime = True\n");
+        s.push_str("dxvk.trackPipelineLifetime = False\n");
 
         s.push_str("d3d9.deferSurfaceCreation = True\n");
-        s.push_str("d3d9.tearFree = False\n");
+        s.push_str(&format!("d3d9.tearFree = {}\n", if self.tear_free { "True" } else { "False" }));
         s.push_str(&format!("d3d9.maxFrameLatency = {}\n", self.max_frame_latency));
         s.push_str("d3d9.lenientClear = True\n");
         s.push_str("d3d9.allowDiscard = True\n");
         s.push_str("d3d9.allowDoNotWait = True\n");
-        s.push_str("d3d9.deviceLocalConstantBuffers = Auto\n");
+        s.push_str(&format!("d3d9.deviceLocalConstantBuffers = {}\n", if self.device_local_constant_buffers { "True" } else { "False" }));
         s.push_str("d3d9.strictConstantCopies = False\n");
         s.push_str("d3d9.cachedDynamicBuffers = True\n");
         s.push_str("d3d9.cachedWriteOnlyBuffers = True\n");
         s.push_str("d3d9.noExplicitFrontBuffer = True\n");
-        s.push_str("d3d9.useFP16 = Auto\n");
+        s.push_str(&format!("d3d9.useFP16 = {}\n", if self.use_fp16 { "True" } else { "False" }));
         s.push_str("d3d9.evictManagedOnUnlock = True\n");
         s.push_str("d3d9.memoryTrackTest = False\n");
         s.push_str(&format!("d3d9.maxAvailableMemory = {}\n", self.max_device_memory_mb));
@@ -249,11 +249,11 @@ mod tests {
         assert!(formatted.contains("d3d9.forceSwapchainMSAA = False"));
         assert!(formatted.contains("dxvk.enableMemoryDefrag = False"));
         assert!(formatted.contains("dxvk.tilerMode = True"));
-        assert!(formatted.contains("dxvk.useRawSsbo = Auto"));
-        assert!(formatted.contains("d3d9.maxFrameLatency = 2"));
-        assert!(formatted.contains("dxvk.enableDescriptorBuffer = Auto"));
-        assert!(formatted.contains("d3d9.useFP16 = Auto"));
-        assert!(formatted.contains("d3d9.deviceLocalConstantBuffers = Auto"));
+        assert!(formatted.contains("dxvk.useRawSsbo = False"));
+        assert!(formatted.contains("d3d9.maxFrameLatency = 1"));
+        assert!(formatted.contains("dxvk.enableDescriptorBuffer = False"));
+        assert!(formatted.contains("d3d9.useFP16 = True"));
+        assert!(formatted.contains("d3d9.deviceLocalConstantBuffers = False"));
         assert!(formatted.contains("d3d9.cachedWriteOnlyBuffers = True"));
     }
 }

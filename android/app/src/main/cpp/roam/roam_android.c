@@ -104,7 +104,8 @@ extern uint32_t nfs_rust_get_contrast_mode(void);
 
 static int g_carpool_patched = 0;
 static _Atomic int s_null_page_protected = 0;
-static int g_hooks_installed = 0;
+static pthread_mutex_t s_hooks_mu = PTHREAD_MUTEX_INITIALIZER;
+static volatile int g_hooks_installed = 0;
 static void roam_android_install_hooks(void);
 
 
@@ -702,6 +703,14 @@ static recomp_void_func_t arm64_inline_hook(void *target_func, void *hook_func) 
     if (!target_func || !hook_func) return NULL;
     uint32_t *target = (uint32_t *)target_func;
 
+    // Safety check: Avoid double-hooking if target already has an inline hook jump (ldr x16, [pc, #8]; br x16)
+    if (target[0] == 0x58000050 && target[1] == 0xd61f0200) {
+        __android_log_print(ANDROID_LOG_WARN, "NFSU2-Hook",
+                            "arm64_inline_hook: target %p is ALREADY hooked! Skipping to prevent infinite recursion.",
+                            target_func);
+        return NULL;
+    }
+
     static uint8_t *s_tramp_page = NULL;
     static size_t s_tramp_offset = 0;
     if (!s_tramp_page) {
@@ -1005,11 +1014,17 @@ static void look_process_view(uint32_t view_id, uint32_t cam) {
 }
 
 static float get_configured_draw_distance(void) {
+    static float s_cached_dd = -1.0f;
+    if (s_cached_dd >= 0.0f) return s_cached_dd;
     const char *dd = getenv("NFSU2_DRAW_DISTANCE");
     if (dd && *dd) {
         float val = strtof(dd, NULL);
-        if (val > 0.0f) return val;
+        if (val > 0.0f) {
+            s_cached_dd = val;
+            return val;
+        }
     }
+    s_cached_dd = 0.0f;
     return 0.0f;
 }
 
@@ -1160,9 +1175,16 @@ static void look_camera_frame_tick(void) {
 static void roam_android_install_hooks(void) {
     if (g_hooks_installed || !g_p_recomp_lookup) return;
 
+    pthread_mutex_lock(&s_hooks_mu);
+    if (g_hooks_installed || !g_p_recomp_lookup) {
+        pthread_mutex_unlock(&s_hooks_mu);
+        return;
+    }
+
     Dl_info dlinfo;
     if (!dladdr((void *)g_p_recomp_lookup, &dlinfo) || !dlinfo.dli_fbase) {
         __android_log_print(ANDROID_LOG_ERROR, "NFSU2-Hook", "Failed to resolve lib base via dladdr");
+        pthread_mutex_unlock(&s_hooks_mu);
         return;
     }
 
@@ -1171,26 +1193,27 @@ static void roam_android_install_hooks(void) {
     long page_sz = sysconf(_SC_PAGESIZE);
     if (page_sz <= 0) page_sz = 16384;
 
-    static const uint8_t EXPECTED_4A[16] = {
+    static const uint8_t EXPECTED_4A[16] __attribute__((unused)) = {
         0xff, 0xc3, 0x01, 0xd1, 0xfd, 0x7b, 0x01, 0xa9,
         0xfc, 0x6f, 0x02, 0xa9, 0xfa, 0x67, 0x03, 0xa9
     };
-    static const uint8_t EXPECTED_5C[16] = {
+    static const uint8_t EXPECTED_5C[16] __attribute__((unused)) = {
         0xff, 0x03, 0x02, 0xd1, 0xfd, 0x7b, 0x02, 0xa9,
         0xfc, 0x6f, 0x03, 0xa9, 0xfa, 0x67, 0x04, 0xa9
     };
-    static const uint8_t EXPECTED_RADAR[16] = {
+    static const uint8_t EXPECTED_RADAR[16] __attribute__((unused)) = {
         0xfd, 0x7b, 0xba, 0xa9, 0xfc, 0x6f, 0x01, 0xa9,
         0xfa, 0x67, 0x02, 0xa9, 0xf8, 0x5f, 0x03, 0xa9
     };
-    static const uint8_t EXPECTED_RECOMP_HOOK[16] = {
+    static const uint8_t EXPECTED_RECOMP_HOOK[16] __attribute__((unused)) = {
         0xff, 0x43, 0x01, 0xd1, 0xe8, 0x0b, 0x00, 0xfd,
         0xfd, 0x7b, 0x02, 0xa9, 0xf6, 0x57, 0x03, 0xa9
     };
 
     void *target_4a = g_p_recomp_lookup ? (void *)g_p_recomp_lookup(0x004a5d90) : (void *)(lib_base + 0x1464be0);
     if (target_4a) {
-        s_orig_4a5d90 = arm64_inline_hook(target_4a, (void *)hook_sub_004a5d90);
+        recomp_void_func_t orig = arm64_inline_hook(target_4a, (void *)hook_sub_004a5d90);
+        if (orig) s_orig_4a5d90 = orig;
         __android_log_print(ANDROID_LOG_INFO, "NFSU2-Hook",
                             "Hooked sub_004a5d90 (garage car viewer) at %p (orig: %p)",
                             target_4a, s_orig_4a5d90);
@@ -1201,7 +1224,8 @@ static void roam_android_install_hooks(void) {
 
     void *target_5c = g_p_recomp_lookup ? (void *)g_p_recomp_lookup(0x005c7ec0) : (void *)(lib_base + 0x2d762b0);
     if (target_5c) {
-        s_orig_5c7ec0 = arm64_inline_hook(target_5c, (void *)hook_sub_005c7ec0);
+        recomp_void_func_t orig = arm64_inline_hook(target_5c, (void *)hook_sub_005c7ec0);
+        if (orig) s_orig_5c7ec0 = orig;
         __android_log_print(ANDROID_LOG_INFO, "NFSU2-Hook",
                             "Hooked sub_005c7ec0 (camera setup) at %p (orig: %p)",
                             target_5c, s_orig_5c7ec0);
@@ -1212,7 +1236,8 @@ static void roam_android_install_hooks(void) {
 
     void *target_radar = g_p_recomp_lookup ? (void *)g_p_recomp_lookup(0x005caad0) : (void *)(lib_base + 0x2754a8c);
     if (target_radar) {
-        s_orig_5caad0 = arm64_inline_hook(target_radar, (void *)hook_sub_005caad0);
+        recomp_void_func_t orig = arm64_inline_hook(target_radar, (void *)hook_sub_005caad0);
+        if (orig) s_orig_5caad0 = orig;
         __android_log_print(ANDROID_LOG_INFO, "NFSU2-Hook",
                             "Hooked sub_005caad0 (RenderRadar) at %p (orig: %p)",
                             target_radar, s_orig_5caad0);
@@ -1224,7 +1249,8 @@ static void roam_android_install_hooks(void) {
     void *target_recomp_hook = dlsym(RTLD_DEFAULT, "recomp_hook");
     if (!target_recomp_hook) target_recomp_hook = (void *)(lib_base + 0x004ae2dc);
     if (target_recomp_hook) {
-        s_orig_recomp_hook = (recomp_hook_func_t)arm64_inline_hook(target_recomp_hook, (void *)hook_recomp_hook);
+        recomp_hook_func_t orig = (recomp_hook_func_t)arm64_inline_hook(target_recomp_hook, (void *)hook_recomp_hook);
+        if (orig) s_orig_recomp_hook = orig;
         __android_log_print(ANDROID_LOG_INFO, "NFSU2-Hook",
                             "Hooked recomp_hook at %p (orig: %p)",
                             target_recomp_hook, s_orig_recomp_hook);
@@ -1267,6 +1293,7 @@ static void roam_android_install_hooks(void) {
     }
 
     g_hooks_installed = 1;
+    pthread_mutex_unlock(&s_hooks_mu);
 }
 
 static const uint32_t kAllResolutionPercents[] = {
